@@ -317,6 +317,21 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 `The "${BACKEND_LABELS[kind]}" backend is configured but not yet implemented (planned for a later milestone). Searches fall back to the built-in lexical backend.`
             )
         }
+
+        new Setting(containerEl)
+            .setName('Reindex')
+            .setDesc('Rebuild the search index over the current catalog without rescanning folders.')
+            .addButton((button) =>
+                button
+                    .setButtonText('Reindex')
+                    .setTooltip('Re-run the search backend over the current catalog')
+                    .onClick(async () => {
+                        button.setButtonText('Reindexing…').setDisabled(true)
+                        await this.plugin.reindex()
+                        button.setButtonText('Reindex').setDisabled(false)
+                        new Notice('Search index rebuilt')
+                    })
+            )
     }
 
     // ----- Section 5: Support -----

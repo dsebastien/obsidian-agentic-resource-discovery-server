@@ -39,6 +39,8 @@ Manually add resources that aren't skills — MCP server cards, A2A agent cards,
 
 The default needs no model and no network. Semantic backends are an opt-in future enhancement; selecting one today degrades gracefully to lexical search.
 
+**Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
+
 ## Where settings are stored
 
 Settings persist in the vault's plugin data (`.obsidian/plugins/agentic-resource-discovery-server/data.json`). The bearer token and any API keys are stored there — treat that file as sensitive. Settings are validated on load, so a corrupt or partial file falls back to safe defaults rather than failing.

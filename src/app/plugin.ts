@@ -114,6 +114,20 @@ export class ArdServerPlugin extends Plugin {
         }
     }
 
+    /**
+     * Rebuild the search index over the current catalog without rescanning the
+     * vault or restarting the server. Useful after switching backend or to
+     * refresh a stale index.
+     */
+    async reindex(): Promise<void> {
+        try {
+            await this.registry.reindex()
+            log('Search index rebuilt', 'debug')
+        } catch (error) {
+            log('Reindex failed', 'error', error)
+        }
+    }
+
     private async startRegistry(): Promise<void> {
         try {
             await this.registry.start(this.settings)

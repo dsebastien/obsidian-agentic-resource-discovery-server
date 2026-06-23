@@ -89,6 +89,30 @@ describe('RegistryController', () => {
         expect(body.entries[0]?.identifier).toBe('urn:air:obsidian:mcp:news')
     })
 
+    it('reindexes the current catalog in place and keeps serving searches', async () => {
+        controller = new RegistryController()
+        await controller.start(settingsWith([mcpResource()]))
+        const port = controller.port
+
+        await controller.reindex()
+        expect(controller.port).toBe(port) // same server, no restart
+        expect(controller.catalogSize).toBe(1)
+
+        const res = await fetch(`http://127.0.0.1:${controller.port}/search`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'authorization': `Bearer ${TOKEN}` },
+            body: JSON.stringify({ query: { text: 'weather forecast' } })
+        })
+        const body = (await res.json()) as { results: Array<{ identifier: string }> }
+        expect(body.results[0]?.identifier).toBe('urn:air:obsidian:mcp:weather')
+    })
+
+    it('reindex is a safe no-op when the registry is not running', async () => {
+        controller = new RegistryController()
+        await controller.reindex() // must not throw
+        expect(controller.isRunning).toBe(false)
+    })
+
     it('merges scanned skill entries with manual resources', async () => {
         controller = new RegistryController()
         await controller.start(settingsWith([mcpResource()]))

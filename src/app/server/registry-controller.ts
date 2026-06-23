@@ -81,6 +81,16 @@ export class RegistryController {
         await this.rebuild(settings)
     }
 
+    /**
+     * Re-run {@link SearchBackend.index} over the current catalog without
+     * rebuilding it or restarting the server. Useful after switching backend or
+     * to refresh the index. No-op when the registry is not running.
+     */
+    async reindex(): Promise<void> {
+        if (!this.catalog) return
+        await this.search.index(this.catalog.listAll())
+    }
+
     async stop(): Promise<void> {
         await this.server?.stop()
         this.server = null
