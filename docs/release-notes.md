@@ -1,78 +1,18 @@
-# Release Notes
+---
+title: Release notes
+nav_order: 95
+---
 
-## 2.6.3 (2026-06-17)
+# Release notes
 
-### Bug Fixes
+## Unreleased
 
-- **deps:** override vulnerable transitive dev dependencies
+First working version. Not yet published to the community catalog.
 
-## 2.6.2 (2026-06-03)
+- Local-first ARD registry served on `127.0.0.1` with bearer-token auth.
+- Skill scanning + enrichment: turns `SKILL.md` files into rich catalog entries (description, tags, capabilities, example queries).
+- REST endpoints: `/.well-known/ai-catalog.json`, `POST /search`, `GET /agents`, skill file serving, `/health`.
+- MCP endpoint (`POST /mcp`) with the Code Mode pattern (`search`, `get_skill`, `execute` tools + sandbox).
+- BM25 lexical search by default (no model download); pluggable backend seam for future semantic search.
 
-### Bug Fixes
-
-- **all:** added warning and fix for latest Obsidian release search changes
-
-## 2.6.1 (2026-05-14)
-
-## 2.6.0 (2026-05-13)
-
-## 2.4.0 (2026-04-07)
-
-### Features
-
-- **all:** updated
-- **all:** updated workflows
-
-## 2.3.0 (2026-02-11)
-
-### Features
-
-- **all:** added docs template
-- **all:** added Obsidian skills (including obsidian cli)
-- **all:** updated scripts
-
-## 2.2.0 (2026-01-30)
-
-### Features
-
-- **all:** updated scripts
-
-## 2.0.4 (2026-01-04)
-
-### Bug Fixes
-
-- **all:** use console.debug instead of console.log
-
-## 2.0.3 (2025-12-16)
-
-### Bug Fixes
-
-- **all:** adapt the build.ts to be generic
-
-## 2.0.2 (2025-12-12)
-
-### Bug Fixes
-
-- **all:** fix image url
-
-## 2.0.1 (2025-12-12)
-
-### Bug Fixes
-
-- **all:** fied the release workflow to name the tags correctly
-
-## 2.0.0 (2025-12-11)
-
-## 1.6.0 (2024-10-27)
-
-## 1.5.0 (2024-05-14)
-
-## 1.4.0 (2024-05-14)
-
-## 1.3.0 (2024-05-14)
-
-## 1.2.0 (2024-05-14)
-
-## 1.1.0 (2024-05-13)
-
-## 1.0.0 (2024-04-26)
+User-facing changelog highlights live here; the commit-level changelog is generated in `CHANGELOG.md`.

@@ -1,3 +1,30 @@
+## This project: obsidian-agentic-resource-discovery-server
+
+> Read this first. It orients you in **this** codebase; the generic template guidance follows below.
+
+**What it is.** An Obsidian plugin (`isDesktopOnly`) that turns the vault into a local-first **Agentic Resource Discovery (ARD)** publisher + Agent Registry: it scans AI Skills into an `ai-catalog.json` and serves it (REST + MCP) on `127.0.0.1` so local AI agents can search and fetch resources.
+
+**Start here.**
+
+- [`documentation/plans/implementation-plan.md`](documentation/plans/implementation-plan.md) — the authoritative design. **§1a "Implementation Status"** has the milestone table + design refinements (read it before assuming the prose below it is current; refinements supersede it).
+- [`documentation/Architecture.md`](documentation/Architecture.md) — module map + data flow.
+- [`documentation/Domain Model.md`](<documentation/Domain Model.md>) — the ubiquitous language. Use these terms exactly.
+- [`documentation/Business Rules.md`](<documentation/Business Rules.md>) — invariants (BR-1…BR-15). Treat as mandatory; e.g. loopback-only bind, auth-except-public-catalog, traversal-safe file serving, sandbox isolation.
+
+**How the code is shaped (deep modules, tested through their interface).**
+
+- The HTTP layer is split: `server/router.ts` is a **pure** `RegistryRequest → RegistryResponse` function (all endpoint behaviour, fully unit-tested without sockets); `server/http-server.ts` is a thin `node:http` adapter over it. Don't put behaviour in the adapter.
+- `server/registry-controller.ts` is the **only seam the plugin drives** (`start`/`stop`/`rebuild`/`setSkillEntries`). It owns the catalog, the `SearchBackend`, the `SkillFileService`, and the server. The router closes over a mutable `RouterDeps`, so a rebuild swaps the catalog in place.
+- Pluggable seams: `SearchBackend` (`search/search-backend.ts`, default `lexical-search-backend.ts`, built via `search-backend-factory.ts`) and `SkillFileService` (`skills/skill-file-server.ts`). Add new behaviour as a new implementation, not a flag.
+- The MCP endpoint (`mcp/`) is **hand-rolled JSON-RPC** (not `@modelcontextprotocol/sdk`) + a **QuickJS WASM** Code Mode sandbox (`mcp/sandbox.ts`).
+
+**Conventions specific to this repo.**
+
+- **Test-first (TDD), verify on real data.** Write the `*.spec.ts` red→green per module; run a single file with `bun test <path>`. The scanner/enricher are verified against the real ~395-skill vault at `/c/users/trankill/My Drive/Notes/Seb/.claude/skills` — a real-data smoke test already caught a `Date.slice` bug that unit tests missed.
+- **Frontmatter is untrusted.** `js-yaml` turns unquoted dates into `Date` objects and yields numbers/booleans; always coerce via `asString`/`asStringArray` (see `skills/skill-enricher.ts`) before string ops. Do **not** reintroduce `gray-matter` — it calls `yaml.safeLoad`, removed in the repo's pinned `js-yaml@4`.
+- **Lint gotchas:** plugin lifecycle methods return `void` (not `Promise`) — fire-and-forget with `void`; use `window.setTimeout`, never bare `setTimeout`; avoid `NodeJS.*` type references (`no-undef`); no `String(unknown)` (`no-base-to-string`) — narrow with `typeof x === 'string'`. `*.spec.ts` files may use `fetch` and `any` (override in `eslint.config.ts`).
+- **Always finish a change green:** `bun run validate` (tsc + tests + lint) and `bun run build`. Keep the plan's §1a status table updated and commit per milestone with a conventional-commit message (allowed scopes: `all`/`build`/`deps`/`docs`/`plugin`).
+
 ## Project Documentation
 
 ## Building a plugin from this template

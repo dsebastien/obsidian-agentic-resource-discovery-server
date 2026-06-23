@@ -1,7 +1,7 @@
 # obsidian-agentic-resource-discovery-server: Implementation Plan
 
-**Status:** Draft — 2026-06-23  
-**Author:** Synthesis agent  
+**Status:** Living — M0–M6 implemented (2026-06-23). See §1a for the current milestone table; sections below the status block are the original design and are superseded where §1a says so.  
+**Author:** Synthesis agent + implementation notes  
 **Target repo:** `/home/sebastien/wks/obsidian-agentic-resource-discovery-server`  
 **Template base:** `/home/sebastien/wks/obsidian-plugin-template`
 
@@ -23,7 +23,7 @@ _Living section — updated after each milestone. Built test-first (Matt Pocock 
 | **M3** — Skill file serving                            | ✅ Done (2026-06-23) | `utils/path-safety` (safeJoin), `skills/skill-file-server` (`FsSkillFileService`: manifest + file serving, extension allowlist, traversal-safe), router `GET /skills/<name>` + `/skills/<name>/<path>` (binary-capable responses), wired through `RegistryController`. Verified e2e on real data: search → fetch SKILL.md (200, text/markdown). 140 tests. **Auto file-watching deferred to M6** (manual "Rescan" + startup scan cover it; skills often live on a FUSE mount where fs.watch is unreliable). |
 | **M4** — MCP Code Mode endpoint                        | ✅ Done (2026-06-23) | `mcp/sandbox` (QuickJS WASM Code Mode sandbox: injected catalog + `registry` API, timeout/memory caps, no host access) + `mcp/mcp-server` (lean JSON-RPC 2.0: `initialize`/`tools/list`/`tools/call`; tools `search`/`get_skill`/`execute`), mounted at `POST /mcp`. **Hand-rolled JSON-RPC instead of `@modelcontextprotocol/sdk`** (avoids the heavy SDK + SSE transport; keeps the bundle lean). 158 tests; bundle 1.6 MB (QuickJS WASM inlined).                                                        |
 | **M5** — Pluggable backend factory                     | ✅ Done (2026-06-23) | `search/search-backend-factory` (`createSearchBackend`) wired into `RegistryController`; a backend-kind change restarts the registry. **Vector backends (local-model / qmd-sidecar / hosted-api) deliberately deferred** per the v1 non-goal of zero mandatory model downloads — selecting one degrades gracefully to lexical. Drop-in seam ready. 160 tests.                                                                                                                                               |
-| **M6** — Hardening + docs                              | ⏳ In progress       | EADDRINUSE retry (3×500ms) on the HTTP server done. README + `docs/` user guide + `documentation/` technical docs + AGENTS.md next.                                                                                                                                                                                                                                                                                                                                                                         |
+| **M6** — Hardening + docs                              | ✅ Done (2026-06-23) | EADDRINUSE retry (3×500ms). Full docs: rewritten `README.md`, `docs/` user guide (usage/configuration/tips/release-notes), `documentation/` technical docs (Architecture, Domain Model, Business Rules BR-1…15, Configuration), and a project section atop `AGENTS.md`. Remaining hardening (rate-limit, MCP session TTL) and **auto file-watching** tracked as post-v1 follow-ups.                                                                                                                         |
 
 ### Design refinements adopted during implementation
 
@@ -1913,6 +1913,8 @@ src/
 
 ### M5 — Optional Vector Search Backend (3–4 days)
 
+**Status: ◐ Partial / deliberately scoped (2026-06-23).** The pluggable seam shipped: `search-backend-factory.createSearchBackend(config)`, wired so a backend-kind change restarts the registry. The actual vector backends (Transformers.js local model, qmd sidecar, hosted API) are **deferred on purpose** — shipping a mandatory model download contradicts the v1 non-goal — so selecting one degrades to lexical for now. The design below stands as the recipe for adding them.
+
 **Deliverables:**
 
 - `LocalModelSearchBackend` with `@huggingface/transformers`, ONNX WASM, `all-MiniLM-L6-v2` int8.
@@ -1934,6 +1936,8 @@ src/
 ---
 
 ### M6 — Hardening, Tests, and Documentation (3–4 days)
+
+**Status: ✅ Core done (2026-06-23).** EADDRINUSE retry shipped; README, `docs/` user guide, `documentation/` technical docs, and the `AGENTS.md` project section written. ~160 tests across the suite. Post-v1 follow-ups (not blocking): per-IP rate limiting, MCP session TTL cleanup, automatic skill file-watching, and a manual end-to-end pass with a real MCP client (e.g. Claude Code).
 
 **Deliverables:**
 
