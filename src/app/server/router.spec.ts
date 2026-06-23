@@ -251,4 +251,40 @@ describe('registry router', () => {
         const res = await handle(req({ method: 'GET', path: '/skills/git-commit-helper/SKILL.md' }))
         expect(res.status).toBe(401)
     })
+
+    it('handles an MCP tools/call over POST /mcp', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/mcp',
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'tools/call',
+                    params: { name: 'search', arguments: { query: 'commit' } }
+                })
+            })
+        )
+        expect(res.status).toBe(200)
+        const body = JSON.parse(res.body as string)
+        expect(body.result.structuredContent.results[0].identifier).toBe(
+            'urn:air:obsidian:skills:git-commit-helper'
+        )
+    })
+
+    it('returns 202 for an MCP notification', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/mcp',
+                body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
+            })
+        )
+        expect(res.status).toBe(202)
+    })
+
+    it('requires auth for /mcp', async () => {
+        const res = await handle(req({ method: 'POST', path: '/mcp', body: '{}' }))
+        expect(res.status).toBe(401)
+    })
 })

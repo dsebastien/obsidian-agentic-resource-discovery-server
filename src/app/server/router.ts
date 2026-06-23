@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { CatalogService } from '../catalog/catalog-service'
+import { handleMcpMessage } from '../mcp/mcp-server'
 import type { SearchBackend, SearchFilter } from '../search/search-backend'
 import type { SkillFileService } from '../skills/skill-file-server'
 import type { ArdErrorResponse, SearchResultItem } from '../types/ard.types'
@@ -95,9 +96,41 @@ export function createRouter(deps: RouterDeps): RouteHandler {
         if (req.method === 'GET' && req.path.startsWith('/skills/')) {
             return handleSkillFile(deps, req)
         }
+        if (req.method === 'POST' && req.path === '/mcp') {
+            return handleMcp(deps, req)
+        }
 
         return errorResponse(deps, 404, 'NOT_FOUND', `No route for ${req.method} ${req.path}`)
     }
+}
+
+async function handleMcp(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(req.body || 'null')
+    } catch {
+        return json(deps, 200, {
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32700, message: 'Parse error' }
+        })
+    }
+
+    const mcpDeps = { catalog: deps.catalog, search: deps.search, skillFiles: deps.skillFiles }
+
+    if (Array.isArray(parsed)) {
+        const responses = (
+            await Promise.all(parsed.map((m) => handleMcpMessage(m, mcpDeps)))
+        ).filter((r) => r !== null)
+        return responses.length > 0
+            ? json(deps, 200, responses)
+            : { status: 202, headers: corsHeaders(deps), body: '' }
+    }
+
+    const response = await handleMcpMessage(parsed, mcpDeps)
+    return response
+        ? json(deps, 200, response)
+        : { status: 202, headers: corsHeaders(deps), body: '' }
 }
 
 async function handleSkillFile(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
