@@ -17,7 +17,7 @@ Turn your Obsidian vault into a **local-first [Agentic Resource Discovery (ARD)]
 
 ## Status
 
-Early but functional. The REST registry, skill scanning/enrichment, skill file serving, and the MCP Code Mode endpoint all work and are covered by ~160 tests. See [`documentation/plans/implementation-plan.md`](documentation/plans/implementation-plan.md) for the full design and milestone status.
+Early but functional. The REST registry, skill scanning/enrichment, skill file serving, the MCP Code Mode endpoint, and optional semantic search (local or hosted embedding server) all work and are covered by 200+ tests. See the [technical docs](documentation/) for the architecture and design.
 
 `isDesktopOnly` — the plugin needs Node's HTTP server and filesystem access.
 
@@ -53,7 +53,7 @@ To use it as an MCP server, point your MCP client at `http://127.0.0.1:27182/mcp
 ## Documentation
 
 - **[User guide](docs/usage.md)** — usage, [configuration](docs/configuration.md), [tips](docs/tips.md).
-- **[Technical docs](documentation/)** — [architecture](documentation/Architecture.md), [domain model](<documentation/Domain Model.md>), [business rules](<documentation/Business Rules.md>), and the [implementation plan](documentation/plans/implementation-plan.md).
+- **[Technical docs](documentation/)** — [architecture](documentation/Architecture.md), [domain model](<documentation/Domain Model.md>), and [business rules](<documentation/Business Rules.md>).
 - **[Contributing](CONTRIBUTING.md)** · **[Development](DEVELOPMENT.md)**
 
 ## Privacy & security

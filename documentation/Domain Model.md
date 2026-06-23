@@ -32,4 +32,4 @@ The ubiquitous language of this plugin. Use these terms exactly in code, tests, 
 
 ## Architecture Decision Records
 
-ADRs are recorded as "design refinements" in [`plans/implementation-plan.md` §1a](plans/implementation-plan.md). Notable decisions: pure-router/thin-adapter split; `js-yaml` over `gray-matter` (pinned-version conflict); coerce all untrusted YAML values; hand-rolled MCP JSON-RPC over the heavy SDK; QuickJS WASM sandbox over `vm2`/`isolated-vm`; vector backends deferred to avoid mandatory model downloads.
+Notable design decisions: pure-router/thin-adapter split; `js-yaml` over `gray-matter` (pinned-version conflict); coerce all untrusted YAML values; hand-rolled MCP JSON-RPC over the heavy SDK; QuickJS WASM sandbox over `vm2`/`isolated-vm`; semantic search via an OpenAI-compatible embedding server (local or hosted) rather than a bundled model, to avoid mandatory downloads.

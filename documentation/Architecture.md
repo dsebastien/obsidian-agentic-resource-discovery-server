@@ -1,6 +1,6 @@
 # Architecture
 
-Technical overview of the plugin. For the full design and milestone history see [`plans/implementation-plan.md`](plans/implementation-plan.md).
+Technical overview of the plugin.
 
 ## What it is
 

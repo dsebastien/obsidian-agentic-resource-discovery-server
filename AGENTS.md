@@ -6,7 +6,6 @@
 
 **Start here.**
 
-- [`documentation/plans/implementation-plan.md`](documentation/plans/implementation-plan.md) — the authoritative design. **§1a "Implementation Status"** has the milestone table + design refinements (read it before assuming the prose below it is current; refinements supersede it).
 - [`documentation/Architecture.md`](documentation/Architecture.md) — module map + data flow.
 - [`documentation/Domain Model.md`](<documentation/Domain Model.md>) — the ubiquitous language. Use these terms exactly.
 - [`documentation/Business Rules.md`](<documentation/Business Rules.md>) — invariants (BR-1…BR-15). Treat as mandatory; e.g. loopback-only bind, auth-except-public-catalog, traversal-safe file serving, sandbox isolation.
