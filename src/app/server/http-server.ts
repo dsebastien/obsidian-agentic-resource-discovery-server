@@ -11,6 +11,11 @@ import type { RegistryRequest, RouteHandler } from './router'
  */
 const MAX_LISTEN_RETRIES = 3
 const LISTEN_RETRY_MS = 500
+/** Reject request bodies larger than this (the catalog/search payloads are tiny). */
+const MAX_BODY_BYTES = 5 * 1024 * 1024
+
+/** Thrown when a request body exceeds {@link MAX_BODY_BYTES}; mapped to HTTP 413. */
+class PayloadTooLargeError extends Error {}
 
 export class ArdHttpServer {
     private server: Server | null = null
@@ -83,7 +88,12 @@ async function handleRequest(
         const response = await handler(await toRegistryRequest(req))
         res.writeHead(response.status, response.headers)
         res.end(response.body)
-    } catch {
+    } catch (error) {
+        if (error instanceof PayloadTooLargeError) {
+            res.writeHead(413, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ errorCode: 'PAYLOAD_TOO_LARGE', message: 'Request body too large.' }))
+            return
+        }
         res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
         res.end(JSON.stringify({ errorCode: 'INTERNAL', message: 'Internal server error.' }))
     }
@@ -102,8 +112,21 @@ async function toRegistryRequest(req: IncomingMessage): Promise<RegistryRequest>
     }
 
     const chunks: Uint8Array[] = []
+    let total = 0
+    let tooLarge = false
     for await (const chunk of req) {
-        chunks.push(chunk as Uint8Array)
+        const bytes = chunk as Uint8Array
+        total += bytes.length
+        if (total > MAX_BODY_BYTES) {
+            // Stop buffering (so memory stays bounded) but keep draining the
+            // socket so we can still write the 413 response to the client.
+            tooLarge = true
+            continue
+        }
+        chunks.push(bytes)
+    }
+    if (tooLarge) {
+        throw new PayloadTooLargeError()
     }
 
     return {

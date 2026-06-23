@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FsSkillFileService } from './skill-file-server'
@@ -46,6 +46,28 @@ describe('FsSkillFileService.file', () => {
     it('returns not-found for unknown skills and missing files', async () => {
         expect(await service.file('nope', 'SKILL.md')).toBe('not-found')
         expect(await service.file('my-skill', 'missing.md')).toBe('not-found')
+    })
+
+    it('forbids reading through a symlink that escapes the skill folder', async () => {
+        // A secret outside the skill root, and an allowlisted-extension symlink
+        // inside the folder pointing at it. safeJoin passes (no ../), but the
+        // realpath check must reject it.
+        const outside = await mkdtemp(join(tmpdir(), 'ard-secret-'))
+        const secret = join(outside, 'secret.md')
+        await writeFile(secret, 'TOP SECRET')
+        await symlink(secret, join(dir, 'escape.md'))
+        try {
+            expect(await service.file('my-skill', 'escape.md')).toBe('forbidden')
+        } finally {
+            await rm(outside, { recursive: true, force: true })
+        }
+    })
+
+    it('still serves a symlink that stays inside the skill folder', async () => {
+        await symlink(join(dir, 'SKILL.md'), join(dir, 'alias.md'))
+        const result = await service.file('my-skill', 'alias.md')
+        if (result === 'not-found' || result === 'forbidden') throw new Error('unexpected')
+        expect(new TextDecoder().decode(result.body)).toContain('# Hello')
     })
 })
 

@@ -94,7 +94,7 @@ export function deriveTags(fm: SkillFrontmatter): string[] {
     }
 
     tags.add(isInternal(fm) ? 'internal' : 'user-invocable')
-    if (fm.context === 'fork') tags.add('runs-as-subagent')
+    if (asString(fm.context) === 'fork') tags.add('runs-as-subagent')
 
     const allowedTools = asString(fm['allowed-tools']) ?? ''
     if (/WebFetch|WebSearch/.test(allowedTools)) tags.add('uses-web')
@@ -171,7 +171,13 @@ function asStringArray(value: unknown): string[] {
 }
 
 function isInternal(fm: SkillFrontmatter): boolean {
-    return fm['user-invocable'] === false || fm['disable-model-invocation'] === true
+    // Frontmatter is untrusted: a quoted YAML value yields a string, not a bool.
+    // Treat both the real boolean and its string form as the same signal.
+    const notInvocable = fm['user-invocable'] === false || asString(fm['user-invocable']) === 'false'
+    const noModelInvoke =
+        fm['disable-model-invocation'] === true ||
+        asString(fm['disable-model-invocation']) === 'true'
+    return notInvocable || noModelInvoke
 }
 
 function addTag(tags: Set<string>, prefix: string, value: string | undefined): void {

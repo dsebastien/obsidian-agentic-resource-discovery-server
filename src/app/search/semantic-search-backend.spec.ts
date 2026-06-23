@@ -110,6 +110,34 @@ describe('SemanticSearchBackend', () => {
         expect(results[0]?.entry.identifier).toBe('urn:air:obsidian:skills:weather')
     })
 
+    it('flips to failed after repeated query-time embed failures, serving lexical meanwhile', async () => {
+        let failQueries = false
+        const embedder: Embedder = {
+            id: 'flaky-query',
+            dimensions: 3,
+            isReady: () => true,
+            load: async () => {},
+            // Build embeds the whole entry set (length > 1); a query embeds 1 text.
+            embed: async (texts) => {
+                if (failQueries && texts.length === 1) {
+                    throw new Error('server died after build')
+                }
+                return texts.map(() => unit([1, 0, 0]))
+            }
+        }
+        const backend = new SemanticSearchBackend(embedder)
+        await backend.index(ENTRIES)
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('ready')
+
+        failQueries = true
+        for (let i = 0; i < 3; i++) {
+            const results = await backend.search({ query: 'git' })
+            expect(results.length).toBeGreaterThan(0) // lexical fallback keeps serving
+        }
+        expect(backend.embeddingState).toBe('failed') // now the supervisor will retry
+    })
+
     it('reports embeddingState across the build lifecycle', async () => {
         const backend = new SemanticSearchBackend(fakeEmbedder(() => [1, 0, 0]))
         expect(backend.embeddingState).toBe('idle')

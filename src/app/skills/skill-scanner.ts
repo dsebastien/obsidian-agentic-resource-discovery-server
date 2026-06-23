@@ -31,6 +31,8 @@ export interface ScanResult {
     folders: Map<string, string>
     skillCount: number
     errorCount: number
+    /** Skills dropped because another skill already claimed the same URN. */
+    duplicateCount: number
 }
 
 /**
@@ -56,6 +58,7 @@ export async function scanSkillFolders(
     const seen = new Set<string>()
     let skillCount = 0
     let errorCount = 0
+    let duplicateCount = 0
 
     for (let i = 0; i < files.length; i += chunkSize) {
         const chunk = files.slice(i, i + chunkSize)
@@ -66,6 +69,7 @@ export async function scanSkillFolders(
                 continue
             }
             if (seen.has(result.entry.identifier)) {
+                duplicateCount++
                 continue
             }
             seen.add(result.entry.identifier)
@@ -76,7 +80,7 @@ export async function scanSkillFolders(
         await scheduler()
     }
 
-    return { entries, folders, skillCount, errorCount }
+    return { entries, folders, skillCount, errorCount, duplicateCount }
 }
 
 interface BuiltEntry {

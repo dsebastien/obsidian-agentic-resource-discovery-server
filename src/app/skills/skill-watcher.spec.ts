@@ -63,11 +63,22 @@ describe('SkillWatcher', () => {
     it('watches every configured folder and skips blank paths', () => {
         const { watchFn, watchedDirs } = fakeWatch()
         const watcher = new SkillWatcher(watchFn, timers, 20)
-        watcher.start(['/a', '  ', '/b'], () => {})
+        const failed = watcher.start(['/a', '  ', '/b'], () => {})
         expect(watchedDirs().sort()).toEqual(['/a', '/b'])
+        expect(failed).toEqual([])
         expect(watcher.watching).toBe(true)
         watcher.stop()
         expect(watcher.watching).toBe(false)
+    })
+
+    it('reports folders that could not be watched', () => {
+        // watchFn returns null for an unwatchable folder.
+        const watchFn: WatchFn = (dir) => (dir === '/bad' ? null : { close: () => {} })
+        const watcher = new SkillWatcher(watchFn, timers, 20)
+        const failed = watcher.start(['/good', '/bad'], () => {})
+        expect(failed).toEqual(['/bad'])
+        expect(watcher.watching).toBe(true) // /good is still watched
+        watcher.stop()
     })
 
     it('stop() cancels a pending rescan and closes handles', async () => {

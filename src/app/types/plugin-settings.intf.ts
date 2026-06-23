@@ -92,7 +92,6 @@ export const LastScanStatsSchema = z.object({
 })
 
 export const PluginSettingsSchema = z.object({
-    enabled: z.boolean().default(true).catch(true),
     // Catalog identity
     publisher: z.string().default('obsidian').catch('obsidian'),
     catalogDisplayName: z

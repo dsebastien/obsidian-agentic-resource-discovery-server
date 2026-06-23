@@ -16,18 +16,23 @@ import { log } from '../utils/log'
  *
  * Turns the vault into a local-first ARD publisher + Agent Registry. Owns the
  * settings lifecycle and the {@link RegistryController} (catalog + search + HTTP
- * server). Skill scanning and the MCP endpoint arrive in later milestones.
- *
- * See documentation/plans/implementation-plan.md.
+ * server), plus skill scanning and the MCP endpoint.
  */
 export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
-    override settings: PluginSettings = produce(DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
+    override settings: PluginSettings = DEFAULT_SETTINGS
 
     /** How often to retry a failed embedding build (e.g. server started late). */
     private static readonly EMBEDDING_RETRY_INTERVAL_MS = 30_000
 
     private readonly registry = new RegistryController()
+
+    /**
+     * Serialises every registry-mutating operation (start, rescan, reindex,
+     * settings reconcile) so the background skill scan and a concurrent settings
+     * change can't race — e.g. both calling start() on the same port at once.
+     */
+    private opChain: Promise<void> = Promise.resolve()
 
     private readonly watcher = new SkillWatcher(nodeFsWatchFn, {
         set: (callback, ms) => window.setTimeout(callback, ms),
@@ -52,15 +57,23 @@ export class ArdServerPlugin extends Plugin {
             )
         )
 
-        if (this.settings.enabled) {
-            await this.startRegistry()
-            // Scan skills after the workspace settles so we don't block load or
-            // drown in vault events. The scan itself yields between chunks.
-            this.app.workspace.onLayoutReady(() => {
-                void this.rescanSkills()
-                this.reconcileWatcher()
-            })
-        }
+        await this.serialize(() => this.startRegistry())
+        // Scan skills after the workspace settles so we don't block load or
+        // drown in vault events. The scan itself yields between chunks.
+        this.app.workspace.onLayoutReady(() => {
+            void this.rescanSkills()
+            this.reconcileWatcher()
+        })
+    }
+
+    /** Run a registry-mutating operation after any in-flight one completes. */
+    private serialize(op: () => Promise<void>): Promise<void> {
+        const next = this.opChain.then(op, op)
+        this.opChain = next.then(
+            () => undefined,
+            () => undefined
+        )
+        return next
     }
 
     /**
@@ -69,7 +82,7 @@ export class ArdServerPlugin extends Plugin {
      * when the backend has no embeddings — so a slow build is never interrupted.
      */
     private retryEmbeddingsIfNeeded(): void {
-        if (this.settings.enabled && this.registry.embeddingsNeedRetry) {
+        if (this.registry.embeddingsNeedRetry) {
             log('Retrying failed embedding build', 'debug')
             void this.reindex()
         }
@@ -102,7 +115,7 @@ export class ArdServerPlugin extends Plugin {
         const previous = this.settings
         this.settings = produce(this.settings, updater)
         await this.saveSettings()
-        await this.syncRegistry(previous, this.settings)
+        await this.serialize(() => this.syncRegistry(previous, this.settings))
     }
 
     async saveSettings(): Promise<void> {
@@ -114,8 +127,12 @@ export class ArdServerPlugin extends Plugin {
      * Non-blocking: yields to the UI between chunks via window.setTimeout.
      */
     async rescanSkills(): Promise<void> {
+        return this.serialize(() => this.doRescanSkills())
+    }
+
+    private async doRescanSkills(): Promise<void> {
         const folders = this.resolveSkillFolders()
-        if (!this.settings.enabled || folders.length === 0) {
+        if (folders.length === 0) {
             return
         }
         const port = this.registry.port ?? this.settings.server.port
@@ -134,7 +151,11 @@ export class ArdServerPlugin extends Plugin {
                 }
             })
             await this.saveSettings()
-            log(`Scanned ${result.skillCount} skills (${result.errorCount} errors)`, 'debug')
+            const dupes = result.duplicateCount > 0 ? `, ${result.duplicateCount} duplicates` : ''
+            log(
+                `Scanned ${result.skillCount} skills (${result.errorCount} errors${dupes})`,
+                'debug'
+            )
         } catch (error) {
             log('Skill scan failed', 'error', error)
         }
@@ -146,12 +167,14 @@ export class ArdServerPlugin extends Plugin {
      * refresh a stale index.
      */
     async reindex(): Promise<void> {
-        try {
-            await this.registry.reindex()
-            log('Search index rebuilt', 'debug')
-        } catch (error) {
-            log('Reindex failed', 'error', error)
-        }
+        return this.serialize(async () => {
+            try {
+                await this.registry.reindex()
+                log('Search index rebuilt', 'debug')
+            } catch (error) {
+                log('Reindex failed', 'error', error)
+            }
+        })
     }
 
     private async startRegistry(): Promise<void> {
@@ -170,10 +193,6 @@ export class ArdServerPlugin extends Plugin {
     /** Reconcile the running server with a settings change. */
     private async syncRegistry(previous: PluginSettings, next: PluginSettings): Promise<void> {
         try {
-            if (!next.enabled) {
-                await this.registry.stop()
-                return
-            }
             // The search backend is built once at start, capturing its config
             // (e.g. the embedding server URL/model), so any backend-config change
             // must recreate it — i.e. restart the registry, not just rebuild.
@@ -205,10 +224,14 @@ export class ArdServerPlugin extends Plugin {
     /** Start or stop the opt-in skill-folder watcher to match current settings. */
     private reconcileWatcher(): void {
         const folders = this.resolveSkillFolders()
-        const shouldWatch =
-            this.settings.enabled && this.settings.watchSkillFolders && folders.length > 0
-        if (shouldWatch) {
-            this.watcher.start(folders, () => void this.rescanSkills())
+        if (this.settings.watchSkillFolders && folders.length > 0) {
+            const failed = this.watcher.start(folders, () => void this.rescanSkills())
+            if (failed.length > 0) {
+                new Notice(
+                    `ARD: could not watch ${failed.length} skill folder(s) for changes. ` +
+                        `Use "Rescan skills now" to pick up edits manually.`
+                )
+            }
         } else {
             this.watcher.stop()
         }

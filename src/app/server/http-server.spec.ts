@@ -48,6 +48,16 @@ describe('ArdHttpServer', () => {
         expect(server.port).toBeGreaterThan(0)
     })
 
+    it('rejects an oversized request body with 413', async () => {
+        server = await startServer()
+        const res = await fetch(`http://127.0.0.1:${server.port}/search`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'authorization': `Bearer ${TOKEN}` },
+            body: 'x'.repeat(6 * 1024 * 1024) // > 5 MB cap
+        })
+        expect(res.status).toBe(413)
+    })
+
     it('serves the public catalog over HTTP', async () => {
         server = await startServer()
         const res = await fetch(`http://127.0.0.1:${server.port}/.well-known/ai-catalog.json`)

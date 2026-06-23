@@ -1,5 +1,5 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { extname, join, posix } from 'node:path'
+import { readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { extname, join, posix, sep } from 'node:path'
 import { safeJoin } from '../utils/path-safety'
 
 /** Extensions the registry will serve, mapped to their content type. */
@@ -79,6 +79,12 @@ export class FsSkillFileService implements SkillFileService {
         if (!contentType) {
             return 'forbidden'
         }
+        // safeJoin only blocks lexical `../` traversal, but readFile follows
+        // symlinks — a link inside the folder pointing outside it would escape.
+        // Resolve symlinks and re-verify containment before reading.
+        if (!(await isInsideRoot(absolute, root))) {
+            return 'forbidden'
+        }
         try {
             const body = new Uint8Array(await readFile(absolute))
             return { contentType, body }
@@ -110,6 +116,27 @@ export class FsSkillFileService implements SkillFileService {
         files.sort((a, b) => a.path.localeCompare(b.path))
         return { name, files }
     }
+}
+
+/**
+ * Whether `absolute` resolves (through any symlinks) to a path still inside
+ * `root`. A non-existent path returns `true` so the caller's `readFile` produces
+ * a normal not-found; only a path that resolves *outside* the root is rejected.
+ */
+async function isInsideRoot(absolute: string, root: string): Promise<boolean> {
+    let realRoot: string
+    try {
+        realRoot = await realpath(root)
+    } catch {
+        realRoot = root
+    }
+    let realPath: string
+    try {
+        realPath = await realpath(absolute)
+    } catch {
+        return true // doesn't exist (or dangling link) → let readFile 404 it
+    }
+    return realPath === realRoot || realPath.startsWith(realRoot + sep)
 }
 
 async function listServableFiles(root: string): Promise<string[]> {

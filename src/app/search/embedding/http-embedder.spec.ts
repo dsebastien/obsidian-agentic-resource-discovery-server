@@ -64,6 +64,24 @@ describe('HttpEmbedder', () => {
         expect(vecs).toHaveLength(3)
     })
 
+    it('preserves response order when the server omits index (no collapse to 0)', async () => {
+        // Ollama-style: no `index` field. Distinct vectors must stay in order.
+        const client: EmbeddingHttpClient = async (req) => {
+            const parsed = JSON.parse(req.body) as { input: string[] }
+            const vecs = [
+                [1, 0],
+                [0, 1],
+                [1, 1]
+            ]
+            return { status: 200, json: { data: parsed.input.map((_t, i) => ({ embedding: vecs[i] })) } }
+        }
+        const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
+        await embedder.load()
+        const [a, b] = await embedder.embed(['a', 'b'])
+        expect(a?.[0]).toBeCloseTo(1, 5) // first row normalises to [1,0]
+        expect(b?.[1]).toBeCloseTo(1, 5) // second row normalises to [0,1]
+    })
+
     it('appends /embeddings only when the url lacks it', async () => {
         const urls: string[] = []
         const spy = fakeClient(

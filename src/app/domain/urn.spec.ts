@@ -25,6 +25,22 @@ describe('buildSkillUrn', () => {
             'urn:air:obsidian:skills:developassion-analytics'
         )
     })
+
+    it('sanitises untrusted names (spaces, colons, dates) into valid URNs', () => {
+        expect(isValidArdUrn(buildSkillUrn('obsidian', 'my skill'))).toBe(true)
+        expect(buildSkillUrn('obsidian', 'my skill')).toBe('urn:air:obsidian:skills:my-skill')
+        expect(buildSkillUrn('obsidian', 'foo:bar')).toBe('urn:air:obsidian:skills:foo-bar')
+        // A YAML date coerced to an ISO string is full of colons — must still validate.
+        expect(isValidArdUrn(buildSkillUrn('obsidian', '2024-01-01T00:00:00.000Z'))).toBe(true)
+    })
+
+    it('falls back to a placeholder for an all-illegal name', () => {
+        expect(buildSkillUrn('obsidian', ':::')).toBe('urn:air:obsidian:skills:unknown')
+    })
+
+    it('keeps a publisher FQDN but strips illegal publisher chars', () => {
+        expect(buildUrn('my domain.net', ['skills', 'x'])).toBe('urn:air:my-domain.net:skills:x')
+    })
 })
 
 describe('isValidArdUrn', () => {

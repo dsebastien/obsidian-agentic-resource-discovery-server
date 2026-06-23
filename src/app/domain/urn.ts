@@ -22,9 +22,31 @@ export const SKILLS_NAMESPACE = 'skills'
  */
 const ARD_URN_PATTERN = /^urn:air:[a-zA-Z0-9.-]+(?::[a-zA-Z0-9._-]+)+$/
 
+/**
+ * Sanitise a publisher segment to the `[a-zA-Z0-9.-]` charset the URN grammar
+ * allows (dots for FQDNs, hyphens). Anything else becomes a hyphen; empties fall
+ * back so the result is always a valid, non-empty segment.
+ */
+export const sanitizePublisher = (raw: string): string => collapse(raw, /[^a-zA-Z0-9.-]+/g)
+
+/**
+ * Sanitise a name segment to `[a-zA-Z0-9._-]`. Frontmatter `name` is untrusted —
+ * spaces, colons, or a YAML date (`2024-01-01T…:…`) would otherwise produce an
+ * invalid URN or a wrong dedup key.
+ */
+export const sanitizeUrnSegment = (raw: string): string => collapse(raw, /[^a-zA-Z0-9._-]+/g)
+
+function collapse(raw: string, illegal: RegExp): string {
+    const cleaned = raw
+        .replace(illegal, '-')
+        .replace(/-+/g, '-')
+        .replace(/^[-.]+|[-.]+$/g, '')
+    return cleaned.length > 0 ? cleaned : 'unknown'
+}
+
 /** Build an ARD URN from a publisher and one or more name segments. */
 export const buildUrn = (publisher: string, segments: string[]): string =>
-    [ARD_URN_PREFIX, publisher, ...segments].join(':')
+    [ARD_URN_PREFIX, sanitizePublisher(publisher), ...segments.map(sanitizeUrnSegment)].join(':')
 
 /** Build the URN for a scanned AI Skill. */
 export const buildSkillUrn = (publisher: string, skillName: string): string =>

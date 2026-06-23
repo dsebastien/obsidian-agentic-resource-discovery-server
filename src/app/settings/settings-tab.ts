@@ -72,6 +72,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
             .setName('Bearer token')
             .setDesc('Required on every request except the public catalog. Keep it secret.')
             .addText((text) => {
+                text.inputEl.type = 'password'
                 text.setValue(this.plugin.settings.server.bearerToken)
                 text.setDisabled(true)
                 text.inputEl.addClass('ard-token-field')

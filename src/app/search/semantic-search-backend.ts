@@ -2,11 +2,15 @@ import type { CatalogEntry } from '../types/ard.types'
 import type { Embedder } from './embedding/embedder'
 import { LexicalSearchBackend } from './lexical-search-backend'
 import { fusedToArdScores, reciprocalRankFusion } from './rrf'
-import type { SearchBackend, SearchFilter, SearchRequest, SearchResult } from './search-backend'
+import type { SearchBackend, SearchRequest, SearchResult } from './search-backend'
+import { matchesFilter, terminalSegment } from './search-utils'
 import { VectorStore } from './vector-store'
 
 /** Candidate pool pulled from each signal before fusion (then capped to limit). */
 const FUSION_CANDIDATES = 50
+
+/** Consecutive query-time embed failures before the backend marks itself failed. */
+const QUERY_FAILURE_THRESHOLD = 3
 
 /**
  * Hybrid semantic search backend: lexical BM25 fused with dense-vector cosine
@@ -31,6 +35,8 @@ export class SemanticSearchBackend implements SearchBackend {
     private generation = 0
     private embeddingTask: Promise<void> = Promise.resolve()
     private state: EmbeddingState = 'idle'
+    /** Consecutive query-time embed failures; flips state to `failed` at the threshold. */
+    private queryFailures = 0
 
     constructor(private readonly embedder: Embedder) {}
 
@@ -51,6 +57,7 @@ export class SemanticSearchBackend implements SearchBackend {
 
     async index(entries: CatalogEntry[]): Promise<void> {
         const generation = ++this.generation
+        this.queryFailures = 0
         this.vectors.replace([])
         this.entries = new Map(entries.map((entry) => [entry.identifier, entry]))
         await this.lexical.index(entries)
@@ -95,13 +102,20 @@ export class SemanticSearchBackend implements SearchBackend {
         let vectorIds: string[] = []
         try {
             const [queryVec] = await this.embedder.embed([query])
+            this.queryFailures = 0
             if (queryVec) {
                 vectorIds = this.vectors
                     .query(queryVec, FUSION_CANDIDATES)
                     .map((hit) => hit.id)
             }
         } catch {
-            // Query embedding failed mid-flight — fall back to the lexical ranking.
+            // Query embedding failed mid-flight (e.g. the server died after the
+            // build). Fall back to lexical now, and after a few consecutive
+            // failures flip to `failed` so the retry supervisor rebuilds — rather
+            // than silently re-hitting a broken endpoint on every query forever.
+            if (++this.queryFailures >= QUERY_FAILURE_THRESHOLD) {
+                this.state = 'failed'
+            }
             return this.lexical.search(request)
         }
 
@@ -162,28 +176,4 @@ function entryText(entry: CatalogEntry): string {
     ]
         .filter(Boolean)
         .join('. ')
-}
-
-function terminalSegment(urn: string): string {
-    const parts = urn.split(':')
-    return (parts[parts.length - 1] ?? '').replace(/-/g, ' ')
-}
-
-function matchesFilter(entry: CatalogEntry, filter?: SearchFilter): boolean {
-    if (!filter) {
-        return true
-    }
-    if (filter.type?.length && !filter.type.includes(entry.type)) {
-        return false
-    }
-    if (filter.tags?.length && !filter.tags.some((tag) => entry.tags?.includes(tag))) {
-        return false
-    }
-    if (
-        filter.capabilities?.length &&
-        !filter.capabilities.some((cap) => entry.capabilities?.includes(cap))
-    ) {
-        return false
-    }
-    return true
 }

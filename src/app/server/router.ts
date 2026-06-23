@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import type { CatalogService } from '../catalog/catalog-service'
 import { handleMcpMessage } from '../mcp/mcp-server'
@@ -232,7 +233,19 @@ function handleAgents(deps: RouterDeps, req: RegistryRequest): RegistryResponse 
 // ----- Helpers -----
 
 function isAuthenticated(req: RegistryRequest, token: string): boolean {
-    return token.length > 0 && req.headers['authorization'] === `Bearer ${token}`
+    if (token.length === 0) {
+        return false
+    }
+    const presented = req.headers['authorization']
+    if (typeof presented !== 'string') {
+        return false
+    }
+    // Constant-time compare so a wrong token can't be guessed byte-by-byte via
+    // response timing. Length is compared first (timingSafeEqual requires equal
+    // lengths) — token length is not secret.
+    const expected = new TextEncoder().encode(`Bearer ${token}`)
+    const actual = new TextEncoder().encode(presented)
+    return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
 function toBackendFilter(filter?: Record<string, string | string[]>): SearchFilter | undefined {

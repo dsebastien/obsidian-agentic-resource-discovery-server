@@ -1,6 +1,7 @@
 import MiniSearch from 'minisearch'
 import type { CatalogEntry } from '../types/ard.types'
-import type { SearchBackend, SearchFilter, SearchRequest, SearchResult } from './search-backend'
+import type { SearchBackend, SearchRequest, SearchResult } from './search-backend'
+import { matchesFilter, terminalSegment } from './search-utils'
 
 /** Flattened document indexed by MiniSearch (array fields joined to strings). */
 interface IndexDoc {
@@ -72,7 +73,9 @@ export class LexicalSearchBackend implements SearchBackend {
         }
         const limit = request.limit ?? 10
         const raw = this.mini.search(query)
-        const topScore = raw[0]?.score ?? 1
+        // MiniSearch can return a genuine score of 0 for some fuzzy/prefix hits;
+        // floor the divisor so normalizeScore never divides by zero → NaN.
+        const topScore = Math.max(raw[0]?.score ?? 0, Number.EPSILON)
 
         const results: SearchResult[] = []
         for (const hit of raw) {
@@ -106,27 +109,3 @@ function toIndexDoc(entry: CatalogEntry): IndexDoc {
     }
 }
 
-/** The last URN segment, hyphens turned to spaces (e.g. "git commit helper"). */
-function terminalSegment(urn: string): string {
-    const parts = urn.split(':')
-    return (parts[parts.length - 1] ?? '').replace(/-/g, ' ')
-}
-
-function matchesFilter(entry: CatalogEntry, filter?: SearchFilter): boolean {
-    if (!filter) {
-        return true
-    }
-    if (filter.type?.length && !filter.type.includes(entry.type)) {
-        return false
-    }
-    if (filter.tags?.length && !filter.tags.some((tag) => entry.tags?.includes(tag))) {
-        return false
-    }
-    if (
-        filter.capabilities?.length &&
-        !filter.capabilities.some((cap) => entry.capabilities?.includes(cap))
-    ) {
-        return false
-    }
-    return true
-}

@@ -126,7 +126,7 @@ function parseEmbeddings(json: unknown, expected: number): number[][] {
     if (!Array.isArray(data) || data.length !== expected) {
         throw new Error('Embedding response "data" length does not match the request')
     }
-    const rows = data.map((row) => {
+    const rows = data.map((row, position) => {
         if (typeof row !== 'object' || row === null) {
             throw new Error('Embedding response row is not an object')
         }
@@ -134,7 +134,10 @@ function parseEmbeddings(json: unknown, expected: number): number[][] {
         if (!Array.isArray(embedding) || embedding.some((n) => typeof n !== 'number')) {
             throw new Error('Embedding response row has no numeric "embedding" array')
         }
-        return { index: typeof index === 'number' ? index : 0, embedding: embedding as number[] }
+        // Use the server's `index` only when it actually provides distinct ones;
+        // otherwise (e.g. Ollama omits `index`) trust the response order, so a
+        // missing field can't collapse every row to index 0 and risk a mis-map.
+        return { index: typeof index === 'number' ? index : position, embedding: embedding as number[] }
     })
     rows.sort((a, b) => a.index - b.index)
     return rows.map((row) => row.embedding)

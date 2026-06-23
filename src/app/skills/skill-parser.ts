@@ -19,7 +19,9 @@ export function parseSkill(content: string): ParsedSkill {
     if (match) {
         body = content.slice(match[0].length)
         try {
-            const data = load(match[1]!)
+            // Normalise CRLF / lone-CR line endings so a stray \r can't leak into
+            // a parsed YAML value.
+            const data = load(match[1]!.replace(/\r\n?/g, '\n'))
             if (data && typeof data === 'object') {
                 frontmatter = data as SkillFrontmatter
             }

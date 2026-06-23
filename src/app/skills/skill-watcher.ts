@@ -17,7 +17,8 @@ export interface WatchHandle {
     close(): void
 }
 
-export type WatchFn = (dir: string, onEvent: (filename: string | null) => void) => WatchHandle
+/** Returns a handle, or `null` when the folder can't be watched (unsupported FS, missing dir). */
+export type WatchFn = (dir: string, onEvent: (filename: string | null) => void) => WatchHandle | null
 
 export interface WatcherTimers {
     set: (callback: () => void, ms: number) => unknown
@@ -35,16 +36,27 @@ export class SkillWatcher {
         private readonly debounceMs = 800
     ) {}
 
-    /** Start watching the folders; replaces any previous watches. */
-    start(folders: string[], onChange: () => void): void {
+    /**
+     * Start watching the folders; replaces any previous watches. Returns the
+     * folders that could **not** be watched (so the caller can warn the user) —
+     * an empty array means every folder is being watched.
+     */
+    start(folders: string[], onChange: () => void): string[] {
         this.stop()
         this.onChange = onChange
+        const failed: string[] = []
         for (const folder of folders) {
             if (!folder.trim()) {
                 continue
             }
-            this.handles.push(this.watchFn(folder, (filename) => this.handleEvent(filename)))
+            const handle = this.watchFn(folder, (filename) => this.handleEvent(filename))
+            if (handle) {
+                this.handles.push(handle)
+            } else {
+                failed.push(folder)
+            }
         }
+        return failed
     }
 
     stop(): void {
@@ -79,7 +91,7 @@ export class SkillWatcher {
     }
 }
 
-/** Default fs-watch primitive (recursive; degrades to a no-op if unsupported). */
+/** Default fs-watch primitive (recursive; returns null if unsupported). */
 export const nodeFsWatchFn: WatchFn = (dir, onEvent) => {
     try {
         const watcher = watch(dir, { recursive: true }, (_event, filename) => {
@@ -88,7 +100,8 @@ export const nodeFsWatchFn: WatchFn = (dir, onEvent) => {
         watcher.on('error', () => {})
         return { close: () => watcher.close() }
     } catch {
-        // e.g. recursive watching unavailable on this platform/filesystem.
-        return { close: () => {} }
+        // e.g. recursive watching unavailable on this platform/filesystem, or
+        // the folder doesn't exist — the caller surfaces this to the user.
+        return null
     }
 }
