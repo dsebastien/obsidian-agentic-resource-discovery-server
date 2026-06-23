@@ -89,7 +89,7 @@ export class ArdServerPlugin extends Plugin {
                 { publisher: this.settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
                 { scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0)) }
             )
-            await this.registry.setSkillEntries(this.settings, result.entries)
+            await this.registry.setSkillEntries(this.settings, result.entries, result.folders)
             this.settings = produce(this.settings, (draft) => {
                 draft.lastScanStats = {
                     skillCount: result.skillCount,

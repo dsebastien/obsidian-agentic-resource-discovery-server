@@ -2,13 +2,15 @@ import { CatalogService } from '../catalog/catalog-service'
 import { manualResourcesToEntries } from '../catalog/resource-mapper'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import type { SearchBackend } from '../search/search-backend'
+import { FsSkillFileService } from '../skills/skill-file-server'
 import type { CatalogEntry, HostInfo } from '../types/ard.types'
 import type { PluginSettings } from '../types/plugin-settings.intf'
 import { ArdHttpServer } from './http-server'
 import { createRouter, type RouterDeps } from './router'
 
 /**
- * Owns the running registry: catalog, search index, and HTTP server.
+ * Owns the running registry: catalog, search index, skill file service, and the
+ * HTTP server.
  *
  * This is the single seam the plugin drives — it never sees routers or sockets.
  * The router closes over a mutable {@link RouterDeps} object, so {@link rebuild}
@@ -21,23 +23,28 @@ export class RegistryController {
     private catalog: CatalogService | null = null
     /** Entries from the latest skill scan; merged with manual resources. */
     private skillEntries: CatalogEntry[] = []
+    /** Skill folder name → absolute directory path (for serving bundle files). */
+    private skillFolders = new Map<string, string>()
 
     /** Build the catalog/index from settings and start the HTTP server. */
     async start(settings: PluginSettings): Promise<void> {
         await this.stop()
 
+        const baseUrl = `http://127.0.0.1:${settings.server.port}`
         const catalog = await this.buildCatalog(settings)
         const deps: RouterDeps = {
             catalog,
             search: this.search,
+            skillFiles: new FsSkillFileService(this.skillFolders, baseUrl),
             bearerToken: settings.server.bearerToken,
-            baseUrl: `http://127.0.0.1:${settings.server.port}`,
+            baseUrl,
             enableCors: settings.server.enableCors
         }
         const server = new ArdHttpServer(createRouter(deps))
         await server.start(settings.server.port, settings.server.bindAddress)
-        // Pin the source URL to the actual bound port (handles ephemeral port 0).
+        // Pin URLs to the actual bound port (handles ephemeral port 0).
         deps.baseUrl = `http://127.0.0.1:${server.port}`
+        deps.skillFiles = new FsSkillFileService(this.skillFolders, deps.baseUrl)
 
         this.catalog = catalog
         this.deps = deps
@@ -52,14 +59,23 @@ export class RegistryController {
         }
         const catalog = await this.buildCatalog(settings)
         this.deps.catalog = catalog
+        this.deps.skillFiles = new FsSkillFileService(this.skillFolders, this.deps.baseUrl)
         this.deps.bearerToken = settings.server.bearerToken
         this.deps.enableCors = settings.server.enableCors
         this.catalog = catalog
     }
 
-    /** Replace the scanned-skill entries and rebuild the catalog in place. */
-    async setSkillEntries(settings: PluginSettings, entries: CatalogEntry[]): Promise<void> {
+    /**
+     * Replace the scanned-skill entries (and the folders they were served from)
+     * and rebuild the catalog in place.
+     */
+    async setSkillEntries(
+        settings: PluginSettings,
+        entries: CatalogEntry[],
+        folders: Map<string, string>
+    ): Promise<void> {
         this.skillEntries = entries
+        this.skillFolders = folders
         await this.rebuild(settings)
     }
 

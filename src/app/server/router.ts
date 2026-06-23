@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { CatalogService } from '../catalog/catalog-service'
 import type { SearchBackend, SearchFilter } from '../search/search-backend'
+import type { SkillFileService } from '../skills/skill-file-server'
 import type { ArdErrorResponse, SearchResultItem } from '../types/ard.types'
 
 /**
@@ -25,12 +26,14 @@ export interface RegistryRequest {
 export interface RegistryResponse {
     status: number
     headers: Record<string, string>
-    body: string
+    /** String for JSON/text responses; bytes for served skill files. */
+    body: string | Uint8Array
 }
 
 export interface RouterDeps {
     catalog: CatalogService
     search: SearchBackend
+    skillFiles: SkillFileService
     bearerToken: string
     /** Registry base URL, surfaced as `source` on each search result. */
     baseUrl: string
@@ -89,8 +92,57 @@ export function createRouter(deps: RouterDeps): RouteHandler {
         if (req.method === 'GET' && req.path === '/agents') {
             return handleAgents(deps, req)
         }
+        if (req.method === 'GET' && req.path.startsWith('/skills/')) {
+            return handleSkillFile(deps, req)
+        }
 
         return errorResponse(deps, 404, 'NOT_FOUND', `No route for ${req.method} ${req.path}`)
+    }
+}
+
+async function handleSkillFile(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
+    const rest = req.path.slice('/skills/'.length)
+    const slash = rest.indexOf('/')
+
+    // GET /skills/<name> → bundle manifest
+    if (slash === -1) {
+        const name = safeDecode(rest)
+        const manifest = name === null ? null : await deps.skillFiles.manifest(name)
+        return manifest
+            ? json(deps, 200, manifest)
+            : errorResponse(deps, 404, 'NOT_FOUND', `Unknown skill: ${rest}`)
+    }
+
+    // GET /skills/<name>/<relPath> → bundled file
+    const name = safeDecode(rest.slice(0, slash))
+    if (name === null) {
+        return errorResponse(deps, 400, 'INVALID_ARGUMENT', 'Malformed skill name.')
+    }
+    const relPath = rest.slice(slash + 1)
+    const result = await deps.skillFiles.file(name, relPath)
+    if (result === 'not-found') {
+        return errorResponse(deps, 404, 'NOT_FOUND', `Not found: ${req.path}`)
+    }
+    if (result === 'forbidden') {
+        return errorResponse(
+            deps,
+            403,
+            'PERMISSION_DENIED',
+            'File is outside the skill or not a served type.'
+        )
+    }
+    return {
+        status: 200,
+        headers: { 'content-type': result.contentType, ...corsHeaders(deps) },
+        body: result.body
+    }
+}
+
+function safeDecode(value: string): string | null {
+    try {
+        return decodeURIComponent(value)
+    } catch {
+        return null
     }
 }
 

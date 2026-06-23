@@ -27,6 +27,8 @@ export interface ScanOptions {
 
 export interface ScanResult {
     entries: CatalogEntry[]
+    /** Skill folder name → absolute directory path (for serving bundle files). */
+    folders: Map<string, string>
     skillCount: number
     errorCount: number
 }
@@ -50,6 +52,7 @@ export async function scanSkillFolders(
     const files = await discoverSkillFiles(roots)
 
     const entries: CatalogEntry[] = []
+    const folders = new Map<string, string>()
     const seen = new Set<string>()
     let skillCount = 0
     let errorCount = 0
@@ -57,35 +60,44 @@ export async function scanSkillFolders(
     for (let i = 0; i < files.length; i += chunkSize) {
         const chunk = files.slice(i, i + chunkSize)
         const built = await Promise.all(chunk.map((file) => buildEntry(file, ctx)))
-        for (const entry of built) {
-            if (!entry) {
+        for (const result of built) {
+            if (!result) {
                 errorCount++
                 continue
             }
-            if (seen.has(entry.identifier)) {
+            if (seen.has(result.entry.identifier)) {
                 continue
             }
-            seen.add(entry.identifier)
-            entries.push(entry)
+            seen.add(result.entry.identifier)
+            entries.push(result.entry)
+            folders.set(result.folderName, result.dir)
             skillCount++
         }
         await scheduler()
     }
 
-    return { entries, skillCount, errorCount }
+    return { entries, folders, skillCount, errorCount }
 }
 
-async function buildEntry(file: string, ctx: ScanContext): Promise<CatalogEntry | null> {
+interface BuiltEntry {
+    entry: CatalogEntry
+    folderName: string
+    dir: string
+}
+
+async function buildEntry(file: string, ctx: ScanContext): Promise<BuiltEntry | null> {
     try {
         const [content, stats] = await Promise.all([readFile(file, 'utf-8'), stat(file)])
-        const name = basename(dirname(file))
-        return buildSkillEntry({
+        const dir = dirname(file)
+        const folderName = basename(dir)
+        const entry = buildSkillEntry({
             parsed: parseSkill(content),
-            name,
+            name: folderName,
             publisher: ctx.publisher,
-            url: `${ctx.baseUrl}/skills/${encodeURIComponent(name)}/${SKILL_FILE}`,
+            url: `${ctx.baseUrl}/skills/${encodeURIComponent(folderName)}/${SKILL_FILE}`,
             updatedAt: stats.mtime.toISOString()
         })
+        return { entry, folderName, dir }
     } catch {
         return null
     }

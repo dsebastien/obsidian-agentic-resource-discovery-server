@@ -24,6 +24,7 @@ async function startServer(): Promise<ArdHttpServer> {
     const handler = createRouter({
         catalog,
         search,
+        skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
         bearerToken: TOKEN,
         baseUrl: 'http://127.0.0.1',
         enableCors: true
@@ -87,6 +88,7 @@ describe('ArdHttpServer', () => {
         const handler = createRouter({
             catalog: new CatalogService({ displayName: 'T' }),
             search: new LexicalSearchBackend(),
+            skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
             bearerToken: TOKEN,
             baseUrl: 'http://127.0.0.1',
             enableCors: true

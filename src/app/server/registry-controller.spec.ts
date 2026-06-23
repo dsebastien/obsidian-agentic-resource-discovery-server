@@ -93,14 +93,18 @@ describe('RegistryController', () => {
         controller = new RegistryController()
         await controller.start(settingsWith([mcpResource()]))
 
-        await controller.setSkillEntries(settingsWith([mcpResource()]), [
-            {
-                identifier: 'urn:air:obsidian:skills:my-skill',
-                displayName: 'My Skill',
-                type: 'application/ai-skill',
-                url: 'http://127.0.0.1/skills/my-skill/SKILL.md'
-            }
-        ])
+        await controller.setSkillEntries(
+            settingsWith([mcpResource()]),
+            [
+                {
+                    identifier: 'urn:air:obsidian:skills:my-skill',
+                    displayName: 'My Skill',
+                    type: 'application/ai-skill',
+                    url: 'http://127.0.0.1/skills/my-skill/SKILL.md'
+                }
+            ],
+            new Map()
+        )
 
         expect(controller.catalogSize).toBe(2)
         const res = await fetch(`http://127.0.0.1:${controller.port}/.well-known/ai-catalog.json`)
