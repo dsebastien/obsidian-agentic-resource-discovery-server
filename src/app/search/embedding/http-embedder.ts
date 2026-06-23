@@ -55,7 +55,7 @@ export class HttpEmbedder implements Embedder {
     }
 
     async load(): Promise<void> {
-        const [probe] = await this.request(['ping'])
+        const [probe] = await this.request(['embedding dimension probe'])
         if (!probe || probe.length === 0) {
             throw new Error(`Embedding server returned no vector from ${this.endpoint}`)
         }
@@ -114,7 +114,12 @@ const requestUrlClient: EmbeddingHttpClient = async (req) => {
 /** Ensure the URL targets the `/embeddings` resource exactly once. */
 function embeddingsEndpoint(url: string): string {
     const trimmed = url.replace(/\/+$/, '')
-    return trimmed.endsWith('/embeddings') ? trimmed : `${trimmed}/embeddings`
+    // Already points at an embeddings endpoint (terminal `/embeddings`, or a
+    // custom gateway with `/embeddings/...` mid-path) → use it as-is.
+    if (trimmed.endsWith('/embeddings') || trimmed.includes('/embeddings/')) {
+        return trimmed
+    }
+    return `${trimmed}/embeddings`
 }
 
 /** Extract `data[].embedding` ordered by `index`, validating the shape. */

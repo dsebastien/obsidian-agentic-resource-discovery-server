@@ -44,8 +44,13 @@ export function fusedToArdScores(fused: FusedRank[]): Array<{ id: string; score:
     const top = fused[0]?.rrf ?? 0
     const min = fused[fused.length - 1]?.rrf ?? 0
     const span = top - min
+    if (span === 0) {
+        // Every result tied (e.g. disjoint single-element lists). Keep them all
+        // high but gently decreasing so the input order isn't flattened away.
+        return fused.map(({ id }, i) => ({ id, score: Math.max(1, 85 - i) }))
+    }
     return fused.map(({ id, rrf }) => {
-        const normalised = span === 0 ? 1 : (rrf - min) / span
+        const normalised = (rrf - min) / span
         return { id, score: Math.min(100, Math.max(1, Math.round(normalised * 85))) }
     })
 }

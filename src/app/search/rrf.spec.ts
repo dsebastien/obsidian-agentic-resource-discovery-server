@@ -49,6 +49,16 @@ describe('fusedToArdScores', () => {
         expect(fusedToArdScores([{ id: 'a', rrf: 0.3 }])).toEqual([{ id: 'a', score: 85 }])
     })
 
+    it('preserves order when every result ties (span 0) instead of flattening to 85', () => {
+        const scored = fusedToArdScores([
+            { id: 'a', rrf: 0.2 },
+            { id: 'b', rrf: 0.2 },
+            { id: 'c', rrf: 0.2 }
+        ])
+        expect(scored.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+        expect(scored.map((s) => s.score)).toEqual([85, 84, 83]) // gently decreasing
+    })
+
     it('handles an empty list', () => {
         expect(fusedToArdScores([])).toEqual([])
     })

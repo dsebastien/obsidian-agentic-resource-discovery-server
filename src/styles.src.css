@@ -14,3 +14,13 @@
     @apply font-mono;
     width: 100%;
 }
+
+/* Invalid text input (e.g. out-of-range port) */
+.ard-invalid {
+    border-color: var(--text-error);
+}
+
+/* Inline warning note under a setting (e.g. missing custom API base URL) */
+.ard-setting-warning {
+    color: var(--text-error);
+}

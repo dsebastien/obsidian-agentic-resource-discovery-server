@@ -93,6 +93,16 @@ describe('HttpEmbedder', () => {
         expect(urls).toEqual(['http://x/v1/embeddings', 'http://x/v1/embeddings'])
     })
 
+    it('does not double-append when /embeddings is a non-terminal path segment', async () => {
+        const urls: string[] = []
+        const spy = fakeClient(
+            () => [1],
+            (req) => urls.push(req.url)
+        )
+        await new HttpEmbedder({ url: 'http://gw/v1/embeddings/openai', model: 'm' }, spy).load()
+        expect(urls).toEqual(['http://gw/v1/embeddings/openai'])
+    })
+
     it('rejects load() when the server returns a non-2xx status', async () => {
         const client: EmbeddingHttpClient = async () => ({ status: 500, json: { error: 'boom' } })
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)

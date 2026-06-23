@@ -37,6 +37,9 @@ export class ArdServerPlugin extends Plugin {
     /** Set in onunload so no in-flight/queued op resurrects the server after stop. */
     private disposed = false
 
+    /** Kept so a background rescan can refresh the open settings tab's scan stats. */
+    private settingTab: ArdServerSettingTab | null = null
+
     private readonly watcher = new SkillWatcher(nodeFsWatchFn, {
         set: (callback, ms) => window.setTimeout(callback, ms),
         clear: (handle) => window.clearTimeout(handle as number)
@@ -47,7 +50,8 @@ export class ArdServerPlugin extends Plugin {
         await this.loadSettings()
         await this.ensureBearerToken()
 
-        this.addSettingTab(new ArdServerSettingTab(this.app, this))
+        this.settingTab = new ArdServerSettingTab(this.app, this)
+        this.addSettingTab(this.settingTab)
 
         // Supervise the (opt-in) embedding backend: if its build failed because
         // the embedding server wasn't reachable, retry periodically so it
@@ -162,6 +166,9 @@ export class ArdServerPlugin extends Plugin {
                 }
             })
             await this.saveSettings()
+            // Refresh the settings tab so its scan stats update even when the
+            // rescan was triggered in the background (watcher), not by the button.
+            this.settingTab?.display()
             const dupes = result.duplicateCount > 0 ? `, ${result.duplicateCount} duplicates` : ''
             log(
                 `Scanned ${result.skillCount} skills (${result.errorCount} errors${dupes})`,

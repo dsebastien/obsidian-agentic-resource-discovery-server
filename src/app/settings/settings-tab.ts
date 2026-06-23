@@ -59,7 +59,10 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     .setValue(String(this.plugin.settings.server.port))
                     .onChange(async (value) => {
                         const port = Number.parseInt(value, 10)
-                        if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+                        const valid = Number.isInteger(port) && port >= 1024 && port <= 65535
+                        // Flag out-of-range input instead of silently ignoring it.
+                        text.inputEl.toggleClass('ard-invalid', !valid && value.trim() !== '')
+                        if (!valid) {
                             return
                         }
                         await this.plugin.updateSettings((draft) => {
@@ -197,10 +200,10 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     .onClick(async () => {
                         button.setButtonText('Scanning…').setDisabled(true)
                         await this.plugin.rescanSkills()
+                        // rescanSkills() refreshes this tab itself; just notify.
                         new Notice(
                             `Scanned ${this.plugin.settings.lastScanStats.skillCount} skills`
                         )
-                        this.display()
                     })
             )
     }
@@ -402,8 +405,17 @@ export class ArdServerSettingTab extends PluginSettingTab {
                             await this.plugin.updateSettings((draft) => {
                                 draft.searchBackend.apiBaseUrl = value.trim() || undefined
                             })
+                            this.display()
                         })
                 )
+            if (!backend.apiBaseUrl?.trim()) {
+                containerEl
+                    .createEl('p', {
+                        cls: 'ard-setting-warning',
+                        text: 'A base URL is required for the custom provider — search stays lexical until it is set.'
+                    })
+                    .setAttr('role', 'alert')
+            }
         }
 
         new Setting(containerEl)
