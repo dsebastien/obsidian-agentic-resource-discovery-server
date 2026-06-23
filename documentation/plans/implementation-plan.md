@@ -11,6 +11,33 @@ This document is the authoritative engineering plan for the `obsidian-agentic-re
 
 ---
 
+## 1a. Implementation Status
+
+_Living section — updated after each milestone. Built test-first (Matt Pocock `tdd` / `codebase-design` skills); each milestone ends green on `bun run validate` (tsc + tests + lint) and `bun run build`._
+
+| Milestone                                              | Status               | Notes                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M0** — Scaffold + settings skeleton                  | ✅ Done (2026-06-23) | Template materialized + initialized (`isDesktopOnly: true`), classes renamed, init tooling removed. Settings (Zod, safe parse, loopback invariant), URN + token modules, 5-section settings tab. Published to `origin/main`.                                                                                                 |
+| **M1** — HTTP server + static catalog + lexical search | ✅ Done (2026-06-23) | Pure router + thin node:http adapter, `RegistryController` seam, `CatalogService`, MiniSearch `LexicalSearchBackend`, manual-resource→entry mapper, wired into the plugin lifecycle. Endpoints: `GET /.well-known/ai-catalog.json`, `POST /search`, `GET /agents` (paginated), `POST /explore`→501, `GET /health`. 97 tests. |
+| **M2** — Skill scanning + enrichment                   | ⏳ Next              | Non-blocking scan, SKILL.md→entry mapping, tag/representativeQueries heuristics.                                                                                                                                                                                                                                             |
+| **M3** — Incremental rescan + skill file serving       | ⬜ Planned           |                                                                                                                                                                                                                                                                                                                              |
+| **M4** — MCP Code Mode endpoint                        | ⬜ Planned           |                                                                                                                                                                                                                                                                                                                              |
+| **M5** — Optional vector backends                      | ⬜ Planned           |                                                                                                                                                                                                                                                                                                                              |
+| **M6** — Hardening, tests, docs                        | ⬜ Planned           |                                                                                                                                                                                                                                                                                                                              |
+
+### Design refinements adopted during implementation
+
+These supersede the original prose where they differ (the original plan stays below as rationale):
+
+1. **Server = pure router + thin transport adapter.** Instead of an OO `ArdHttpServer` with embedded handlers (`server/handlers/*`), the request logic is a pure function `createRouter(deps): (RegistryRequest) => Promise<RegistryResponse>` in `server/router.ts`, fully unit-tested without sockets. `server/http-server.ts` is a ~60-line node:http adapter that maps `IncomingMessage`→`RegistryRequest` and writes the response. This is the codebase-design "test through the interface, not past it" principle.
+2. **`RegistryController` seam** (`server/registry-controller.ts`) owns catalog + search backend + HTTP server as one unit. The plugin drives only `start/stop/rebuild(settings)` and never sees routers or sockets. The router closes over a mutable `RouterDeps`, so `rebuild()` swaps the catalog and reindexes in place while the server keeps serving (used for settings changes and, later, rescans).
+3. **Simplified `SearchBackend` interface.** Dropped the separate `CatalogIndexEntry` projection (YAGNI — one shape). The interface is `index(entries: CatalogEntry[])` + `search(req): Promise<SearchResult[]>` + `isReady()`; each backend derives its own internal index representation from plain `CatalogEntry`. See §8.1 (updated).
+4. **Manual-resource mapping is its own module** (`catalog/resource-mapper.ts`): `manualResourcesToEntries(resources, publisher)` namespaces each media type (`mcp`/`agents`/`catalogs`/`registries`), enforces exactly-one `url|data`, and skips incomplete/disabled entries. Skill entries (M2) will be a sibling mapper feeding the same `CatalogService`.
+5. **Catalog Content-Type is `application/json`** (per the ARD "AI Catalog" note), not `application/ai-catalog+json`; the latter is the conceptual media type.
+6. **Settings are validated, never trusted.** `parsePluginSettings` (Zod, per-field `.catch`) hardens against corrupt persisted data; the bind address is a literal `127.0.0.1` that resets on tampering.
+
+---
+
 ## 2. Background
 
 ### 2.1 ARD: Agentic Resource Discovery
@@ -858,6 +885,8 @@ Path-traversal safety is covered in Section 16.
 
 ### 8.1 Pluggable Interface
 
+> **⚠️ Superseded by the shipped interface (see §1a refinement 3).** The interface below kept a separate `CatalogIndexEntry` projection; the implemented `src/app/search/search-backend.ts` is simpler — `index(entries: CatalogEntry[])` + `search(req): Promise<SearchResult[]>` + `isReady()`, with each backend deriving its own index from plain `CatalogEntry`. The block below is retained for the field-boost / RRF rationale.
+
 ```typescript
 // src/app/search/search-backend.ts
 
@@ -1684,6 +1713,8 @@ The template `scripts/build.ts` already uses `format: 'cjs'`, `target: 'node'`, 
 
 ## 13. Source File Layout
 
+> **Note:** The target layout below is the goal. As of M1 the `server/` tier is implemented as `router.ts` + `http-server.ts` + `registry-controller.ts` (no `server/handlers/` subfolder — the router holds the handlers), `search/` has `search-backend.ts` + `lexical-search-backend.ts`, and `catalog/` has `catalog-service.ts` + `resource-mapper.ts`. `skills/`, `mcp/`, and the other search backends arrive in later milestones.
+
 ```
 src/
 ├── main.ts                           # Plugin entry point, exports ArdServerPlugin
@@ -1780,6 +1811,8 @@ src/
 ---
 
 ### M1 — HTTP Server + Static Catalog + Lexical Search (3–4 days)
+
+**Status: ✅ Done (2026-06-23).** Implemented as a pure `router` + thin `http-server` adapter behind a `RegistryController` (see §1a). All acceptance criteria below met; 97 tests green. `closeAllConnections()` is used on stop; the EADDRINUSE retry loop is deferred to M6 (the plugin currently surfaces a Notice and asks the user to change the port).
 
 **Deliverables:**
 

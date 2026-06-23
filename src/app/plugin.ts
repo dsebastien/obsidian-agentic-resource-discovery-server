@@ -1,25 +1,27 @@
-import { Plugin } from 'obsidian'
+import { Notice, Plugin } from 'obsidian'
 import { produce } from 'immer'
 import type { Draft } from 'immer'
 import { DEFAULT_SETTINGS, parsePluginSettings } from './types/plugin-settings.intf'
 import type { PluginSettings } from './types/plugin-settings.intf'
 import { ArdServerSettingTab } from './settings/settings-tab'
+import { RegistryController } from './server/registry-controller'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
 
 /**
  * Agentic Resource Discovery Server plugin.
  *
- * Turns the vault into a local-first ARD publisher + Agent Registry. This is the
- * top-level orchestrator; subsystems (skill scanner, catalog, search backend,
- * HTTP server, MCP endpoint) are wired in from later milestones. For now it owns
- * settings lifecycle and the settings UI.
+ * Turns the vault into a local-first ARD publisher + Agent Registry. Owns the
+ * settings lifecycle and the {@link RegistryController} (catalog + search + HTTP
+ * server). Skill scanning and the MCP endpoint arrive in later milestones.
  *
  * See documentation/plans/implementation-plan.md.
  */
 export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
     override settings: PluginSettings = produce(DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
+
+    private readonly registry = new RegistryController()
 
     override async onload(): Promise<void> {
         log('Initializing', 'debug')
@@ -28,20 +30,21 @@ export class ArdServerPlugin extends Plugin {
 
         this.addSettingTab(new ArdServerSettingTab(this.app, this))
 
-        // Milestones M1+: start the localhost HTTP server, scan skill folders on
-        // workspace.onLayoutReady (non-blocking), build the catalog, index it,
-        // and mount the REST + MCP endpoints.
+        if (this.settings.enabled) {
+            await this.startRegistry()
+        }
+
+        // Milestones M2+: scan skill folders on workspace.onLayoutReady
+        // (non-blocking), then rebuild the catalog and reindex.
     }
 
     override onunload(): void {
-        // Milestones M1+: stop the HTTP server, kill any sidecar, close watchers.
+        void this.registry.stop()
     }
 
     /** Load + validate persisted settings, always yielding a complete object. */
     async loadSettings(): Promise<void> {
-        log('Loading settings', 'debug')
         this.settings = parsePluginSettings(await this.loadData())
-        log('Settings loaded', 'debug', this.settings)
     }
 
     /** Generate and persist a bearer token on first run (when none exists yet). */
@@ -50,19 +53,54 @@ export class ArdServerPlugin extends Plugin {
             return
         }
         log('Generating bearer token (first run)', 'debug')
-        await this.updateSettings((draft) => {
+        this.settings = produce(this.settings, (draft) => {
             draft.server.bearerToken = generateBearerToken()
         })
-    }
-
-    /** Apply an immutable update to the settings and persist them. */
-    async updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
-        this.settings = produce(this.settings, updater)
         await this.saveSettings()
     }
 
+    /** Apply an immutable update, persist it, and reconcile the running server. */
+    async updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
+        const previous = this.settings
+        this.settings = produce(this.settings, updater)
+        await this.saveSettings()
+        await this.syncRegistry(previous, this.settings)
+    }
+
     async saveSettings(): Promise<void> {
-        log('Saving settings', 'debug')
         await this.saveData(this.settings)
+    }
+
+    private async startRegistry(): Promise<void> {
+        try {
+            await this.registry.start(this.settings)
+            log('Registry server started', 'debug')
+        } catch (error) {
+            log('Failed to start registry server', 'error', error)
+            new Notice(
+                `ARD: could not start the registry server on port ${this.settings.server.port}. ` +
+                    `It may already be in use — change the port in settings.`
+            )
+        }
+    }
+
+    /** Reconcile the running server with a settings change. */
+    private async syncRegistry(previous: PluginSettings, next: PluginSettings): Promise<void> {
+        try {
+            if (!next.enabled) {
+                await this.registry.stop()
+                return
+            }
+            const serverChanged =
+                previous.server.port !== next.server.port ||
+                previous.server.bindAddress !== next.server.bindAddress
+            if (!this.registry.isRunning || serverChanged) {
+                await this.startRegistry()
+            } else {
+                await this.registry.rebuild(next)
+            }
+        } catch (error) {
+            log('Failed to reconcile registry server', 'error', error)
+        }
     }
 }

@@ -66,5 +66,13 @@ export default defineConfig([
             // Disable sentence case rule - it has false positives for already-correct text
             'obsidianmd/ui/sentence-case': 'off'
         }
+    },
+    {
+        // Tests run in Bun/Node and exercise the local HTTP server over real
+        // sockets, so `fetch` is the right tool here (not Obsidian's requestUrl).
+        files: ['**/*.spec.ts'],
+        rules: {
+            'no-restricted-globals': 'off'
+        }
     }
 ])

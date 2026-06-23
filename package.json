@@ -78,6 +78,7 @@
     },
     "dependencies": {
         "immer": "11.0.1",
+        "minisearch": "7.2.0",
         "zod": "^4.1.13"
     },
     "overrides": {
