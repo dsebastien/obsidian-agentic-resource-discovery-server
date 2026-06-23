@@ -148,10 +148,18 @@ export class ArdServerPlugin extends Plugin {
                 await this.registry.stop()
                 return
             }
+            // The search backend is built once at start, capturing its config
+            // (e.g. the embedding server URL/model), so any backend-config change
+            // must recreate it — i.e. restart the registry, not just rebuild.
+            const backendChanged =
+                previous.searchBackend.kind !== next.searchBackend.kind ||
+                previous.searchBackend.embeddingServerUrl !==
+                    next.searchBackend.embeddingServerUrl ||
+                previous.searchBackend.embeddingModel !== next.searchBackend.embeddingModel
             const serverChanged =
                 previous.server.port !== next.server.port ||
                 previous.server.bindAddress !== next.server.bindAddress ||
-                previous.searchBackend.kind !== next.searchBackend.kind
+                backendChanged
             if (!this.registry.isRunning || serverChanged) {
                 await this.startRegistry()
             } else {

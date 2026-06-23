@@ -13,7 +13,7 @@ Turn your Obsidian vault into a **local-first [Agentic Resource Discovery (ARD)]
     - `GET /agents` — deterministic, paginated listing
     - `GET /skills/<name>/SKILL.md` (and bundled assets) — so an agent can fetch a skill's body and resources directly
 - **Exposes an MCP endpoint** (`POST /mcp`) using the **Code Mode** pattern: `search`, `get_skill`, and `execute` tools, where `execute` runs sandboxed JavaScript against the catalog so an agent can filter and aggregate in a single call.
-- **Adds zero mandatory downloads.** The default search backend is an in-process BM25 index (MiniSearch) — no model, no network. Heavier semantic backends are an opt-in, deferred extension.
+- **Adds zero mandatory downloads.** The default search backend is an in-process BM25 index (MiniSearch) — no model, no network. Optionally, point it at a local embedding server you already run (Ollama, LM Studio, …) for hybrid semantic search; nothing is bundled or downloaded by the plugin, and it falls back to lexical if the server is down.
 
 ## Status
 

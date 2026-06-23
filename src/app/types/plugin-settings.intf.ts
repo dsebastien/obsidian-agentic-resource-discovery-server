@@ -46,9 +46,14 @@ export const SEARCH_BACKEND_KINDS = ['lexical', 'local-model', 'qmd-sidecar', 'h
 
 export const SearchBackendConfigSchema = z.object({
     kind: z.enum(SEARCH_BACKEND_KINDS).default('lexical').catch('lexical'),
-    // local-model options
-    modelId: z.string().default('Xenova/all-MiniLM-L6-v2').catch('Xenova/all-MiniLM-L6-v2'),
-    modelCacheDir: z.string().optional(),
+    // local-model options: an OpenAI-compatible embedding server (Ollama, LM
+    // Studio, llama.cpp, LocalAI, …) the user already runs. Nothing is bundled
+    // or downloaded by the plugin.
+    embeddingServerUrl: z
+        .string()
+        .default('http://localhost:11434/v1')
+        .catch('http://localhost:11434/v1'),
+    embeddingModel: z.string().default('nomic-embed-text').catch('nomic-embed-text'),
     // qmd-sidecar options
     qmdExecutable: z.string().default('qmd').catch('qmd'),
     qmdIndexPath: z.string().optional(),

@@ -13,7 +13,7 @@ import { generateBearerToken } from '../utils/token'
 /** Human-readable labels for the search backend kinds. */
 const BACKEND_LABELS: Record<SearchBackendConfig['kind'], string> = {
     'lexical': 'BM25 lexical (built-in, no download)',
-    'local-model': 'Local embedding model (downloads ~23 MB)',
+    'local-model': 'Local embedding server (Ollama, LM Studio, …)',
     'qmd-sidecar': 'qmd sidecar (requires qmd installed)',
     'hosted-api': 'Hosted embedding API (bring your own key)'
 }
@@ -314,8 +314,35 @@ export class ArdServerSettingTab extends PluginSettingTab {
         const kind = this.plugin.settings.searchBackend.kind
         if (kind === 'local-model') {
             new Setting(containerEl).setDesc(
-                `Hybrid search: lexical BM25 fused with on-device sentence embeddings (model "${this.plugin.settings.searchBackend.modelId}"). The model loads lazily on first use; until it's ready — or if it can't load — searches fall back to the built-in lexical backend automatically. Note: the embedding runtime is not bundled in this build yet, so this currently behaves as lexical.`
+                'Hybrid search: lexical BM25 fused with dense embeddings from a local OpenAI-compatible embedding server you already run (Ollama, LM Studio, llama.cpp, …). Nothing is downloaded by the plugin. If the server is unreachable, searches fall back to the built-in lexical backend automatically. Changing these restarts the registry.'
             )
+            new Setting(containerEl)
+                .setName('Embedding server URL')
+                .setDesc('OpenAI-compatible base or /embeddings URL.')
+                .addText((text) =>
+                    text
+                        .setPlaceholder('http://localhost:11434/v1')
+                        .setValue(this.plugin.settings.searchBackend.embeddingServerUrl)
+                        .onChange(async (value) => {
+                            await this.plugin.updateSettings((draft) => {
+                                draft.searchBackend.embeddingServerUrl =
+                                    value.trim() || 'http://localhost:11434/v1'
+                            })
+                        })
+                )
+            new Setting(containerEl)
+                .setName('Embedding model')
+                .setDesc('Model name the server should use.')
+                .addText((text) =>
+                    text
+                        .setPlaceholder('nomic-embed-text')
+                        .setValue(this.plugin.settings.searchBackend.embeddingModel)
+                        .onChange(async (value) => {
+                            await this.plugin.updateSettings((draft) => {
+                                draft.searchBackend.embeddingModel = value.trim() || 'nomic-embed-text'
+                            })
+                        })
+                )
         } else if (kind !== 'lexical') {
             new Setting(containerEl).setDesc(
                 `The "${BACKEND_LABELS[kind]}" backend is configured but not yet implemented (planned for a later milestone). Searches fall back to the built-in lexical backend.`

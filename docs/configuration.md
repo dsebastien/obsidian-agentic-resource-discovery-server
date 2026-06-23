@@ -32,13 +32,18 @@ Manually add resources that aren't skills — MCP server cards, A2A agent cards,
 
 ## Search backend
 
-| Backend                       | Status                                                                                              |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- |
-| BM25 lexical (built-in)       | **Default.** In-process, zero download.                                                             |
-| Local embedding model         | Hybrid (lexical + on-device semantic) — experimental; falls back to lexical until the model ships.  |
-| qmd sidecar / hosted API      | Selectable but deferred — currently falls back to lexical.                                          |
+| Backend                  | Status                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------- |
+| BM25 lexical (built-in)  | **Default.** In-process, zero download.                                                           |
+| Local embedding server   | Hybrid (lexical + semantic). Uses a local embedding server you run; falls back to lexical if down. |
+| qmd sidecar / hosted API | Selectable but deferred — currently falls back to lexical.                                         |
 
-The default needs no model and no network. The **local embedding model** backend adds semantic ranking (lexical BM25 fused with on-device sentence embeddings); it loads its model lazily and **degrades to lexical automatically** while the model is loading or if it can't load — so search never breaks. The embedding runtime isn't bundled in the current build yet, so this option behaves as lexical for now. Semantic backends honor the plugin's zero-mandatory-download principle: lexical stays the default.
+The default needs no model and no network. The **local embedding server** backend adds semantic ranking — lexical BM25 fused (via Reciprocal Rank Fusion) with dense embeddings from a local **OpenAI-compatible `/v1/embeddings`** server you already run (Ollama, LM Studio, llama.cpp, LocalAI, …). Nothing is bundled or downloaded by the plugin. Configure two fields:
+
+- **Embedding server URL** — e.g. `http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio). Either the base `/v1` or the full `/v1/embeddings` URL works.
+- **Embedding model** — e.g. `nomic-embed-text`.
+
+If the server is unreachable or slow to start, searches **fall back to lexical automatically** — search never breaks. Changing either field restarts the registry. With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the defaults. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
 
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 
