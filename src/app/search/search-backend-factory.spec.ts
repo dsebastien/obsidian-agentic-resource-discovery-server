@@ -15,9 +15,4 @@ describe('createSearchBackend', () => {
         expect(createSearchBackend(config({ kind: 'local-model' })).name).toBe('semantic')
         expect(createSearchBackend(config({ kind: 'hosted-api' })).name).toBe('semantic')
     })
-
-    it('falls back to lexical for the still-deferred qmd-sidecar backend', () => {
-        // Not implemented yet; must not crash the registry — degrades to lexical.
-        expect(createSearchBackend(config({ kind: 'qmd-sidecar' })).name).toBe('lexical')
-    })
 })

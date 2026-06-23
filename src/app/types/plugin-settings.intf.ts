@@ -42,7 +42,7 @@ export const ManualResourceSchema = z.object({
 export type ManualResource = z.infer<typeof ManualResourceSchema>
 
 /** Which search backend powers the registry `POST /search` ranking. */
-export const SEARCH_BACKEND_KINDS = ['lexical', 'local-model', 'qmd-sidecar', 'hosted-api'] as const
+export const SEARCH_BACKEND_KINDS = ['lexical', 'local-model', 'hosted-api'] as const
 
 /**
  * Hosted embedding providers for the `hosted-api` backend. All speak the
@@ -61,9 +61,6 @@ export const SearchBackendConfigSchema = z.object({
         .default('http://localhost:11434/v1')
         .catch('http://localhost:11434/v1'),
     embeddingModel: z.string().default('nomic-embed-text').catch('nomic-embed-text'),
-    // qmd-sidecar options
-    qmdExecutable: z.string().default('qmd').catch('qmd'),
-    qmdIndexPath: z.string().optional(),
     // hosted-api options: a remote OpenAI-compatible embedding API (BYO key).
     apiProvider: z.enum(HOSTED_EMBEDDING_PROVIDERS).default('openai').catch('openai'),
     apiBaseUrl: z.string().optional(),

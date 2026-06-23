@@ -15,7 +15,6 @@ import { generateBearerToken } from '../utils/token'
 const BACKEND_LABELS: Record<SearchBackendConfig['kind'], string> = {
     'lexical': 'BM25 lexical (built-in, no download)',
     'local-model': 'Local embedding server (Ollama, LM Studio, …)',
-    'qmd-sidecar': 'qmd sidecar (requires qmd installed)',
     'hosted-api': 'Hosted embedding API (bring your own key)'
 }
 
@@ -346,10 +345,6 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 )
         } else if (kind === 'hosted-api') {
             this.renderHostedApiOptions(containerEl)
-        } else if (kind !== 'lexical') {
-            new Setting(containerEl).setDesc(
-                `The "${BACKEND_LABELS[kind]}" backend is configured but not yet implemented (planned for a later milestone). Searches fall back to the built-in lexical backend.`
-            )
         }
 
         new Setting(containerEl)

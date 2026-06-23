@@ -37,7 +37,6 @@ Manually add resources that aren't skills — MCP server cards, A2A agent cards,
 | BM25 lexical (built-in) | **Default.** In-process, zero download.                                                            |
 | Local embedding server  | Hybrid (lexical + semantic). Uses a local embedding server you run; falls back to lexical if down. |
 | Hosted embedding API    | Hybrid (lexical + semantic) via a remote provider (OpenAI/Voyage/Jina/custom); bring your own key. |
-| qmd sidecar             | Selectable but deferred — currently falls back to lexical.                                          |
 
 The default needs no model and no network. The semantic backends add ranking quality — lexical BM25 fused (via Reciprocal Rank Fusion) with dense embeddings from an **OpenAI-compatible `/v1/embeddings`** endpoint. Nothing is bundled or downloaded by the plugin.
 

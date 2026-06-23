@@ -5,7 +5,7 @@ import type { CatalogEntry } from '../types/ard.types'
  *
  * Ranks catalog entries by relevance for the registry `POST /search` endpoint.
  * The built-in adapter is {@link LexicalSearchBackend} (BM25, zero download);
- * later milestones add semantic adapters (local model, qmd sidecar, hosted API)
+ * semantic adapters (local embedding server, hosted embedding API) plug in
  * behind this same interface. Entries flow in as plain {@link CatalogEntry}; the
  * backend derives whatever index representation it needs internally.
  */
