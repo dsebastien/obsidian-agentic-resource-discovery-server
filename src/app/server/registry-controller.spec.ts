@@ -89,6 +89,13 @@ describe('RegistryController', () => {
         expect(body.entries[0]?.identifier).toBe('urn:air:obsidian:mcp:news')
     })
 
+    it('does not flag embeddings for retry on the lexical backend', async () => {
+        controller = new RegistryController()
+        await controller.start(settingsWith([mcpResource()]))
+        // Lexical has no embedding index, so there is nothing to retry.
+        expect(controller.embeddingsNeedRetry).toBe(false)
+    })
+
     it('reindexes the current catalog in place and keeps serving searches', async () => {
         controller = new RegistryController()
         await controller.start(settingsWith([mcpResource()]))

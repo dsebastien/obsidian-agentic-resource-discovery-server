@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian'
 import type ArdServerPlugin from '../../main'
 import {
+    HOSTED_EMBEDDING_PROVIDERS,
     MANUAL_RESOURCE_TYPES,
     SEARCH_BACKEND_KINDS,
     type ManualResource,
@@ -343,6 +344,8 @@ export class ArdServerSettingTab extends PluginSettingTab {
                             })
                         })
                 )
+        } else if (kind === 'hosted-api') {
+            this.renderHostedApiOptions(containerEl)
         } else if (kind !== 'lexical') {
             new Setting(containerEl).setDesc(
                 `The "${BACKEND_LABELS[kind]}" backend is configured but not yet implemented (planned for a later milestone). Searches fall back to the built-in lexical backend.`
@@ -363,6 +366,74 @@ export class ArdServerSettingTab extends PluginSettingTab {
                         new Notice('Search index rebuilt')
                     })
             )
+    }
+
+    /** Provider / base URL / model / key inputs for the hosted-api backend. */
+    private renderHostedApiOptions(containerEl: HTMLElement): void {
+        new Setting(containerEl).setDesc(
+            'Hybrid search using a remote OpenAI-compatible embedding API (bring your own key). The query and your skill metadata (names, descriptions, tags) are sent to the provider to embed. Unreachable or unauthorized requests fall back to lexical automatically. Changing these restarts the registry.'
+        )
+
+        const backend = this.plugin.settings.searchBackend
+        new Setting(containerEl)
+            .setName('Provider')
+            .setDesc('OpenAI-compatible embedding provider, or Custom for any other gateway.')
+            .addDropdown((dropdown) => {
+                for (const provider of HOSTED_EMBEDDING_PROVIDERS) {
+                    dropdown.addOption(provider, provider)
+                }
+                dropdown.setValue(backend.apiProvider).onChange(async (value) => {
+                    await this.plugin.updateSettings((draft) => {
+                        draft.searchBackend.apiProvider =
+                            value as SearchBackendConfig['apiProvider']
+                    })
+                    this.display()
+                })
+            })
+
+        if (backend.apiProvider === 'custom') {
+            new Setting(containerEl)
+                .setName('API base URL')
+                .setDesc('OpenAI-compatible base or /embeddings URL.')
+                .addText((text) =>
+                    text
+                        .setPlaceholder('https://api.example.com/v1')
+                        .setValue(backend.apiBaseUrl ?? '')
+                        .onChange(async (value) => {
+                            await this.plugin.updateSettings((draft) => {
+                                draft.searchBackend.apiBaseUrl = value.trim() || undefined
+                            })
+                        })
+                )
+        }
+
+        new Setting(containerEl)
+            .setName('Model')
+            .setDesc('Embedding model name (leave blank to use the provider default).')
+            .addText((text) =>
+                text
+                    .setPlaceholder('text-embedding-3-small')
+                    .setValue(backend.apiModel ?? '')
+                    .onChange(async (value) => {
+                        await this.plugin.updateSettings((draft) => {
+                            draft.searchBackend.apiModel = value.trim() || undefined
+                        })
+                    })
+            )
+
+        new Setting(containerEl)
+            .setName('API key')
+            .setDesc('Sent as a Bearer token. Stored in plugin data — treat it as a secret.')
+            .addText((text) => {
+                text.inputEl.type = 'password'
+                text.setPlaceholder('sk-…')
+                    .setValue(backend.apiKey ?? '')
+                    .onChange(async (value) => {
+                        await this.plugin.updateSettings((draft) => {
+                            draft.searchBackend.apiKey = value.trim() || undefined
+                        })
+                    })
+            })
     }
 
     // ----- Section 5: Support -----

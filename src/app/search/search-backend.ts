@@ -38,4 +38,10 @@ export interface SearchBackend {
     search(request: SearchRequest): Promise<SearchResult[]>
     /** Whether the backend can currently serve queries. */
     isReady(): boolean
+    /**
+     * Optional lifecycle of a background secondary index (e.g. embeddings).
+     * Lets a supervisor retry a `failed` build without disturbing a `building`
+     * one. Backends with only a synchronous index leave this undefined.
+     */
+    readonly embeddingState?: 'idle' | 'building' | 'ready' | 'failed'
 }

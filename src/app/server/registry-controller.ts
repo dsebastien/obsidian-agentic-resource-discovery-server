@@ -109,6 +109,15 @@ export class RegistryController {
         return this.catalog?.size ?? 0
     }
 
+    /**
+     * True when the backend's background embedding index failed and should be
+     * retried (e.g. the embedding server wasn't up yet). False while it's still
+     * building, already ready, idle, or the backend has no embeddings at all.
+     */
+    get embeddingsNeedRetry(): boolean {
+        return this.search.embeddingState === 'failed'
+    }
+
     private async buildCatalog(settings: PluginSettings): Promise<CatalogService> {
         const catalog = new CatalogService(hostFrom(settings))
         const entries = [

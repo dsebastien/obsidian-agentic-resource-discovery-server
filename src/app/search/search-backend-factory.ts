@@ -1,4 +1,5 @@
 import type { SearchBackendConfig } from '../types/plugin-settings.intf'
+import { resolveHostedEmbedderConfig } from './embedding/hosted-embedding'
 import { HttpEmbedder } from './embedding/http-embedder'
 import { LexicalSearchBackend } from './lexical-search-backend'
 import type { SearchBackend } from './search-backend'
@@ -13,9 +14,10 @@ import { SemanticSearchBackend } from './semantic-search-backend'
  * sourced from a local OpenAI-compatible embedding server the user already runs
  * (Ollama, LM Studio, …) — nothing is bundled or downloaded by the plugin, and
  * the backend degrades to lexical-only if the server is unreachable, so
- * selecting it never breaks search. The remaining semantic backends
- * (`qmd-sidecar`, `hosted-api`) are still deferred and fall back to lexical.
- * Each is a drop-in `SearchBackend` on this switch.
+ * selecting it never breaks search. `hosted-api` is the same hybrid backend
+ * pointed at a remote OpenAI-compatible embedding API (BYO key). `qmd-sidecar`
+ * is still deferred and falls back to lexical. Each is a drop-in `SearchBackend`
+ * on this switch.
  */
 export function createSearchBackend(config: SearchBackendConfig): SearchBackend {
     switch (config.kind) {
@@ -26,9 +28,10 @@ export function createSearchBackend(config: SearchBackendConfig): SearchBackend 
                     model: config.embeddingModel
                 })
             )
+        case 'hosted-api':
+            return new SemanticSearchBackend(new HttpEmbedder(resolveHostedEmbedderConfig(config)))
         case 'lexical':
         case 'qmd-sidecar':
-        case 'hosted-api':
         default:
             return new LexicalSearchBackend()
     }

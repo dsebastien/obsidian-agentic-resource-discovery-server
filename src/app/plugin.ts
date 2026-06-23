@@ -24,6 +24,9 @@ export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
     override settings: PluginSettings = produce(DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
 
+    /** How often to retry a failed embedding build (e.g. server started late). */
+    private static readonly EMBEDDING_RETRY_INTERVAL_MS = 30_000
+
     private readonly registry = new RegistryController()
 
     private readonly watcher = new SkillWatcher(nodeFsWatchFn, {
@@ -38,6 +41,17 @@ export class ArdServerPlugin extends Plugin {
 
         this.addSettingTab(new ArdServerSettingTab(this.app, this))
 
+        // Supervise the (opt-in) embedding backend: if its build failed because
+        // the embedding server wasn't reachable, retry periodically so it
+        // recovers once the server comes up — without disturbing a build still
+        // in progress. registerInterval ties the timer to the plugin lifecycle.
+        this.registerInterval(
+            window.setInterval(
+                () => this.retryEmbeddingsIfNeeded(),
+                ArdServerPlugin.EMBEDDING_RETRY_INTERVAL_MS
+            )
+        )
+
         if (this.settings.enabled) {
             await this.startRegistry()
             // Scan skills after the workspace settles so we don't block load or
@@ -46,6 +60,18 @@ export class ArdServerPlugin extends Plugin {
                 void this.rescanSkills()
                 this.reconcileWatcher()
             })
+        }
+    }
+
+    /**
+     * Re-attempt embeddings when the backend's last build failed (e.g. the local
+     * embedding server has since started). No-op while it's building, ready, or
+     * when the backend has no embeddings — so a slow build is never interrupted.
+     */
+    private retryEmbeddingsIfNeeded(): void {
+        if (this.settings.enabled && this.registry.embeddingsNeedRetry) {
+            log('Retrying failed embedding build', 'debug')
+            void this.reindex()
         }
     }
 
@@ -151,11 +177,16 @@ export class ArdServerPlugin extends Plugin {
             // The search backend is built once at start, capturing its config
             // (e.g. the embedding server URL/model), so any backend-config change
             // must recreate it — i.e. restart the registry, not just rebuild.
+            const prevBackend = previous.searchBackend
+            const nextBackend = next.searchBackend
             const backendChanged =
-                previous.searchBackend.kind !== next.searchBackend.kind ||
-                previous.searchBackend.embeddingServerUrl !==
-                    next.searchBackend.embeddingServerUrl ||
-                previous.searchBackend.embeddingModel !== next.searchBackend.embeddingModel
+                prevBackend.kind !== nextBackend.kind ||
+                prevBackend.embeddingServerUrl !== nextBackend.embeddingServerUrl ||
+                prevBackend.embeddingModel !== nextBackend.embeddingModel ||
+                prevBackend.apiProvider !== nextBackend.apiProvider ||
+                prevBackend.apiBaseUrl !== nextBackend.apiBaseUrl ||
+                prevBackend.apiKey !== nextBackend.apiKey ||
+                prevBackend.apiModel !== nextBackend.apiModel
             const serverChanged =
                 previous.server.port !== next.server.port ||
                 previous.server.bindAddress !== next.server.bindAddress ||

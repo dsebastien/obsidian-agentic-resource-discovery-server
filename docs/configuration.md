@@ -32,20 +32,31 @@ Manually add resources that aren't skills — MCP server cards, A2A agent cards,
 
 ## Search backend
 
-| Backend                  | Status                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------- |
-| BM25 lexical (built-in)  | **Default.** In-process, zero download.                                                           |
-| Local embedding server   | Hybrid (lexical + semantic). Uses a local embedding server you run; falls back to lexical if down. |
-| qmd sidecar / hosted API | Selectable but deferred — currently falls back to lexical.                                         |
+| Backend                 | Status                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| BM25 lexical (built-in) | **Default.** In-process, zero download.                                                            |
+| Local embedding server  | Hybrid (lexical + semantic). Uses a local embedding server you run; falls back to lexical if down. |
+| Hosted embedding API    | Hybrid (lexical + semantic) via a remote provider (OpenAI/Voyage/Jina/custom); bring your own key. |
+| qmd sidecar             | Selectable but deferred — currently falls back to lexical.                                          |
 
-The default needs no model and no network. The **local embedding server** backend adds semantic ranking — lexical BM25 fused (via Reciprocal Rank Fusion) with dense embeddings from a local **OpenAI-compatible `/v1/embeddings`** server you already run (Ollama, LM Studio, llama.cpp, LocalAI, …). Nothing is bundled or downloaded by the plugin. Configure two fields:
+The default needs no model and no network. The semantic backends add ranking quality — lexical BM25 fused (via Reciprocal Rank Fusion) with dense embeddings from an **OpenAI-compatible `/v1/embeddings`** endpoint. Nothing is bundled or downloaded by the plugin.
+
+**Local embedding server** — embeddings from a server you already run (Ollama, LM Studio, llama.cpp, LocalAI, …). Configure:
 
 - **Embedding server URL** — e.g. `http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio). Either the base `/v1` or the full `/v1/embeddings` URL works.
 - **Embedding model** — e.g. `nomic-embed-text`.
 
-If the server is unreachable or slow to start, searches **fall back to lexical automatically** — search never breaks. Changing either field restarts the registry. With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the defaults. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
+With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the defaults.
 
-Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server or a smaller embedding model is much faster. If the server starts *after* the plugin, use the **Reindex** button to pick it up.
+**Hosted embedding API** — embeddings from a remote provider. Configure:
+
+- **Provider** — `openai`, `voyage`, `jina`, or `custom`. For `custom`, also set an **API base URL** (any OpenAI-compatible gateway — Azure OpenAI, OpenRouter, a self-hosted proxy, …).
+- **Model** — leave blank to use the provider default (e.g. `text-embedding-3-small` for OpenAI).
+- **API key** — sent as a Bearer token; stored in plugin data, so treat it as a secret. **Privacy note:** your search queries and skill metadata (names, descriptions, tags) are sent to the provider to be embedded. Skill *bodies* are never sent.
+
+If the embedding endpoint is unreachable, slow to start, or rejects the key, searches **fall back to lexical automatically** — search never breaks. Changing any backend field restarts the registry. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
+
+Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server, a hosted API, or a smaller model is much faster. If the embedding server starts *after* the plugin (or recovers from an outage), the plugin retries automatically about every 30 seconds; you can also press **Reindex** to pick it up immediately.
 
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 

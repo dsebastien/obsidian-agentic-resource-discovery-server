@@ -9,16 +9,15 @@ describe('createSearchBackend', () => {
         expect(createSearchBackend(config()).name).toBe('lexical')
     })
 
-    it('creates the hybrid semantic backend for local-model', () => {
-        // The embedding model loads lazily and degrades to lexical until ready,
-        // so constructing it is safe even without the model present.
+    it('creates the hybrid semantic backend for local-model and hosted-api', () => {
+        // Embeddings load lazily and degrade to lexical until ready, so
+        // constructing these is safe even with no server/key present.
         expect(createSearchBackend(config({ kind: 'local-model' })).name).toBe('semantic')
+        expect(createSearchBackend(config({ kind: 'hosted-api' })).name).toBe('semantic')
     })
 
-    it('falls back to lexical for the still-deferred backends', () => {
-        // qmd-sidecar / hosted-api are not implemented yet; they must not crash
-        // the registry — they degrade to the always-available lexical one.
+    it('falls back to lexical for the still-deferred qmd-sidecar backend', () => {
+        // Not implemented yet; must not crash the registry — degrades to lexical.
         expect(createSearchBackend(config({ kind: 'qmd-sidecar' })).name).toBe('lexical')
-        expect(createSearchBackend(config({ kind: 'hosted-api' })).name).toBe('lexical')
     })
 })

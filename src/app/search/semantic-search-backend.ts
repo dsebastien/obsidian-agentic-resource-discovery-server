@@ -30,18 +30,27 @@ export class SemanticSearchBackend implements SearchBackend {
     /** Bumped on every index() so a stale background embed can't clobber a newer one. */
     private generation = 0
     private embeddingTask: Promise<void> = Promise.resolve()
-    private embeddingsBuilt = false
+    private state: EmbeddingState = 'idle'
 
     constructor(private readonly embedder: Embedder) {}
 
     /** Whether the dense-vector signal is live (false → lexical-only fallback). */
     get embeddingsReady(): boolean {
-        return this.embeddingsBuilt
+        return this.state === 'ready'
+    }
+
+    /**
+     * Lifecycle of the dense-vector index. Lets a supervisor (the plugin's retry
+     * interval) tell a transient failure (`failed` → retry) apart from a build
+     * still in progress (`building` → leave it alone, important on slow CPU
+     * embedding servers where a full pass can take ~a minute).
+     */
+    get embeddingState(): EmbeddingState {
+        return this.state
     }
 
     async index(entries: CatalogEntry[]): Promise<void> {
         const generation = ++this.generation
-        this.embeddingsBuilt = false
         this.vectors.replace([])
         this.entries = new Map(entries.map((entry) => [entry.identifier, entry]))
         await this.lexical.index(entries)
@@ -49,9 +58,11 @@ export class SemanticSearchBackend implements SearchBackend {
         // has nothing to embed — stay lexical-only and never contact the embedder,
         // so startup doesn't fire a wasted (and cold/slow) probe at the server.
         if (entries.length === 0) {
+            this.state = 'idle'
             this.embeddingTask = Promise.resolve()
             return
         }
+        this.state = 'building'
         this.embeddingTask = this.buildEmbeddings(entries, generation)
     }
 
@@ -70,7 +81,7 @@ export class SemanticSearchBackend implements SearchBackend {
         if (!query) {
             return []
         }
-        if (!this.embeddingsBuilt) {
+        if (this.state !== 'ready') {
             return this.lexical.search(request)
         }
         return this.fusedSearch(request, query)
@@ -125,15 +136,19 @@ export class SemanticSearchBackend implements SearchBackend {
                     vector: vectors[i] ?? new Float32Array(this.embedder.dimensions)
                 }))
             )
-            this.embeddingsBuilt = true
+            this.state = 'ready'
         } catch {
-            // Model load/embed failed — stay lexical-only. Intentionally swallowed.
+            // Model load/embed failed — stay lexical-only (a supervisor may retry).
+            // Don't clobber a newer generation that's already building.
             if (generation === this.generation) {
-                this.embeddingsBuilt = false
+                this.state = 'failed'
             }
         }
     }
 }
+
+/** Lifecycle of the dense-vector index. */
+export type EmbeddingState = 'idle' | 'building' | 'ready' | 'failed'
 
 /** Natural-language projection of an entry used as the embedding input. */
 function entryText(entry: CatalogEntry): string {

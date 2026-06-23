@@ -98,15 +98,58 @@ describe('SemanticSearchBackend', () => {
         expect(await backend.search({ query: 'a e i o u', limit: 2 })).toHaveLength(2)
     })
 
-    it('degrades to lexical-only when the embedder fails to load', async () => {
+    it('degrades to lexical-only when the embedder fails to load, marking state failed', async () => {
         const backend = new SemanticSearchBackend(failingEmbedder())
         await backend.index(ENTRIES)
         await backend.whenEmbeddingsSettled() // must not throw
 
         expect(backend.isReady()).toBe(true)
         expect(backend.embeddingsReady).toBe(false)
+        expect(backend.embeddingState).toBe('failed')
         const results = await backend.search({ query: 'weather forecast' })
         expect(results[0]?.entry.identifier).toBe('urn:air:obsidian:skills:weather')
+    })
+
+    it('reports embeddingState across the build lifecycle', async () => {
+        const backend = new SemanticSearchBackend(fakeEmbedder(() => [1, 0, 0]))
+        expect(backend.embeddingState).toBe('idle')
+        await backend.index(ENTRIES)
+        expect(backend.embeddingState).toBe('building') // synchronous after index()
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('ready')
+    })
+
+    it('keeps state idle for an empty catalog (nothing to build)', async () => {
+        const backend = new SemanticSearchBackend(fakeEmbedder(() => [1, 0, 0]))
+        await backend.index([])
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('idle')
+    })
+
+    it('recovers to ready when a reindex follows a failed build', async () => {
+        // Embedder fails the first load, then succeeds — mimics a server that
+        // comes up after the plugin (the supervisor reindexes on failure).
+        let failNext = true
+        const embedder: Embedder = {
+            id: 'flaky',
+            dimensions: 3,
+            isReady: () => !failNext,
+            load: async () => {
+                if (failNext) {
+                    failNext = false
+                    throw new Error('server not up yet')
+                }
+            },
+            embed: async (texts) => texts.map(() => unit([1, 0, 0]))
+        }
+        const backend = new SemanticSearchBackend(embedder)
+        await backend.index(ENTRIES)
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('failed')
+
+        await backend.index(ENTRIES) // supervisor retry
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('ready')
     })
 
     it('never contacts the embedder for an empty catalog', async () => {
