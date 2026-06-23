@@ -7,6 +7,7 @@ import {
     type SearchBackendConfig
 } from '../types/plugin-settings.intf'
 import { BUY_ME_A_COFFEE_BADGE_DATA_URL } from '../assets/buy-me-a-coffee'
+import { FolderSuggest } from './components/folder-suggest'
 import { generateBearerToken } from '../utils/token'
 
 /** Human-readable labels for the search backend kinds. */
@@ -135,16 +136,17 @@ export class ArdServerSettingTab extends PluginSettingTab {
 
         this.plugin.settings.skillFolders.forEach((folder, index) => {
             new Setting(containerEl)
-                .addText((text) =>
-                    text
-                        .setPlaceholder('/path/to/skills')
+                .addText((text) => {
+                    text.setPlaceholder('Pick a vault folder or type an absolute path')
                         .setValue(folder)
                         .onChange(async (value) => {
                             await this.plugin.updateSettings((draft) => {
                                 draft.skillFolders[index] = value
                             })
                         })
-                )
+                    // Reuse the shared folder autocomplete (vault folders).
+                    new FolderSuggest(text.inputEl, this.app)
+                })
                 .addExtraButton((button) =>
                     button
                         .setIcon('trash')

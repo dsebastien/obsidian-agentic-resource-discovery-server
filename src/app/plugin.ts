@@ -1,4 +1,5 @@
-import { Notice, Plugin } from 'obsidian'
+import { FileSystemAdapter, Notice, Plugin } from 'obsidian'
+import { isAbsolute, join } from 'node:path'
 import { produce } from 'immer'
 import type { Draft } from 'immer'
 import { DEFAULT_SETTINGS, parsePluginSettings } from './types/plugin-settings.intf'
@@ -87,13 +88,14 @@ export class ArdServerPlugin extends Plugin {
      * Non-blocking: yields to the UI between chunks via window.setTimeout.
      */
     async rescanSkills(): Promise<void> {
-        if (!this.settings.enabled || this.settings.skillFolders.length === 0) {
+        const folders = this.resolveSkillFolders()
+        if (!this.settings.enabled || folders.length === 0) {
             return
         }
         const port = this.registry.port ?? this.settings.server.port
         try {
             const result = await scanSkillFolders(
-                this.settings.skillFolders,
+                folders,
                 { publisher: this.settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
                 { scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0)) }
             )
@@ -149,14 +151,31 @@ export class ArdServerPlugin extends Plugin {
 
     /** Start or stop the opt-in skill-folder watcher to match current settings. */
     private reconcileWatcher(): void {
+        const folders = this.resolveSkillFolders()
         const shouldWatch =
-            this.settings.enabled &&
-            this.settings.watchSkillFolders &&
-            this.settings.skillFolders.length > 0
+            this.settings.enabled && this.settings.watchSkillFolders && folders.length > 0
         if (shouldWatch) {
-            this.watcher.start(this.settings.skillFolders, () => void this.rescanSkills())
+            this.watcher.start(folders, () => void this.rescanSkills())
         } else {
             this.watcher.stop()
         }
+    }
+
+    /**
+     * Resolve configured skill folders to absolute filesystem paths. Absolute
+     * paths are used as-is; vault-relative paths (e.g. from the folder picker)
+     * are resolved against the vault base path. Blank entries are dropped.
+     */
+    private resolveSkillFolders(): string[] {
+        const base = this.vaultBasePath()
+        return this.settings.skillFolders
+            .map((folder) => folder.trim())
+            .filter((folder) => folder.length > 0)
+            .map((folder) => (isAbsolute(folder) || !base ? folder : join(base, folder)))
+    }
+
+    private vaultBasePath(): string {
+        const adapter = this.app.vault.adapter
+        return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : ''
     }
 }
