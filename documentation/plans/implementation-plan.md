@@ -22,7 +22,7 @@ _Living section — updated after each milestone. Built test-first (Matt Pocock 
 | **M2** — Skill scanning + enrichment                   | ✅ Done (2026-06-23) | `skill-parser` (js-yaml), `skill-enricher` (tags + representativeQueries heuristics + `x-osk-*`), `skill-scanner` (recursive discovery, chunked, injectable scheduler). Wired into the plugin (`onLayoutReady` scan + "Rescan skills now" button). **Verified on the real 395-skill vault: 395 scanned, 0 errors.** 122 tests.                                                                                                                                                                                                                                                                                                                            |
 | **M3** — Skill file serving                            | ✅ Done (2026-06-23) | `utils/path-safety` (safeJoin), `skills/skill-file-server` (`FsSkillFileService`: manifest + file serving, extension allowlist, traversal-safe), router `GET /skills/<name>` + `/skills/<name>/<path>` (binary-capable responses), wired through `RegistryController`. Verified e2e on real data: search → fetch SKILL.md (200, text/markdown). 140 tests. **Auto file-watching deferred to M6** (manual "Rescan" + startup scan cover it; skills often live on a FUSE mount where fs.watch is unreliable).                                                                                                                                               |
 | **M4** — MCP Code Mode endpoint                        | ✅ Done (2026-06-23) | `mcp/sandbox` (QuickJS WASM Code Mode sandbox: injected catalog + `registry` API, timeout/memory caps, no host access) + `mcp/mcp-server` (lean JSON-RPC 2.0: `initialize`/`tools/list`/`tools/call`; tools `search`/`get_skill`/`execute`), mounted at `POST /mcp`. **Hand-rolled JSON-RPC instead of `@modelcontextprotocol/sdk`** (avoids the heavy SDK + SSE transport; keeps the bundle lean). 158 tests; bundle 1.6 MB (QuickJS WASM inlined).                                                                                                                                                                                                      |
-| **M5** — Pluggable backend factory                     | ✅ Done (2026-06-23) | `search/search-backend-factory` (`createSearchBackend`) wired into `RegistryController`; a backend-config change restarts the registry. **Hybrid semantic search now built & tested** (post-v1): `local-model` → `SemanticSearchBackend` (lexical BM25 ⊕ dense-vector cosine via RRF) behind an injectable `Embedder` seam (`VectorStore`, `rrf.ts`). The embedder is `HttpEmbedder` — it calls a **local OpenAI-compatible embedding server the user already runs** (Ollama, LM Studio, …) via Obsidian `requestUrl`, so **nothing is bundled or downloaded by the plugin** (bundle stays 1.65 MB; the original Transformers.js/ONNX path was dropped to honor the zero-download non-goal). Two-phase indexing — lexical serves instantly, embeddings build in the background; degrades to lexical if the server is unreachable. `hosted-api` (OpenAI/Voyage/Jina/custom, BYO key — `hosted-embedding.ts`) now ships too. (A qmd-sidecar backend was explored and **dropped** — its BM25 mode duplicated the built-in lexical backend and its hybrid mode was heavy/fragile and overlapped the embedding backends; the `qmd-sidecar` kind was removed entirely.) **Auto-retry**: `embeddingState` (`idle`/`building`/`ready`/`failed`) drives a 30 s `registerInterval` in the plugin that re-attempts `failed` builds (never interrupting a `building` one), so a late-starting embedding server recovers on its own. **Verified live (2026-06-23) against the real 397-skill vault + Ollama `nomic-embed-text`**: 397 entries embedded (768-dim), hybrid fusion returns strong semantic matches (e.g. "capture ideas before I forget them" → the `osk-ideas-*` skills), `pageSize`/tag filters work, stopped server → lexical (HTTP 200), dead-endpoint → `failed → building → ready` recovery with no manual reindex, and `hosted-api` via the custom→Ollama route. On CPU-only Ollama the initial embed of 397 entries takes ~50–60 s; search serves lexical until it completes. Empty-catalog indexing skips the embedder entirely. 204 tests.                                                                                                          |
+| **M5** — Pluggable backend factory                     | ✅ Done (2026-06-23) | `search/search-backend-factory` (`createSearchBackend`) wired into `RegistryController`; a backend-config change restarts the registry. **Hybrid semantic search now built & tested** (post-v1): `local-model` → `SemanticSearchBackend` (lexical BM25 ⊕ dense-vector cosine via RRF) behind an injectable `Embedder` seam (`VectorStore`, `rrf.ts`). The embedder is `HttpEmbedder` — it calls a **local OpenAI-compatible embedding server the user already runs** (Ollama, LM Studio, …) via Obsidian `requestUrl`, so **nothing is bundled or downloaded by the plugin** (bundle stays 1.65 MB; the original Transformers.js/ONNX path was dropped to honor the zero-download non-goal). Two-phase indexing — lexical serves instantly, embeddings build in the background; degrades to lexical if the server is unreachable. `hosted-api` (OpenAI/Voyage/Jina/custom, BYO key — `hosted-embedding.ts`) now ships too. **Auto-retry**: `embeddingState` (`idle`/`building`/`ready`/`failed`) drives a 30 s `registerInterval` in the plugin that re-attempts `failed` builds (never interrupting a `building` one), so a late-starting embedding server recovers on its own. **Verified live (2026-06-23) against the real 397-skill vault + Ollama `nomic-embed-text`**: 397 entries embedded (768-dim), hybrid fusion returns strong semantic matches (e.g. "capture ideas before I forget them" → the `osk-ideas-*` skills), `pageSize`/tag filters work, stopped server → lexical (HTTP 200), dead-endpoint → `failed → building → ready` recovery with no manual reindex, and `hosted-api` via the custom→Ollama route. On CPU-only Ollama the initial embed of 397 entries takes ~50–60 s; search serves lexical until it completes. Empty-catalog indexing skips the embedder entirely. 204 tests.                                                                                                          |
 | **M6** — Hardening + docs                              | ✅ Done (2026-06-23) | EADDRINUSE retry (3×500ms). Full docs (README, `docs/` guide, `documentation/` technical, `AGENTS.md`). **Opt-in file watching** added (`skills/skill-watcher`, off by default, debounced, injected fs-watch/timers; best-effort on FUSE mounts). **Real MCP-client e2e passed** — official `@modelcontextprotocol/sdk@1.29.0` `Client` + `StreamableHTTPClientTransport` connects to `/mcp` and calls `search`/`get_skill`/`execute` (run from an isolated project; the SDK can't load in-repo because the repo pins `ajv@6` via overrides, conflicting with the SDK's `ajv-formats`). Remaining post-v1: MCP session TTL. 166 tests. |
 
 ### Design refinements adopted during implementation
@@ -50,7 +50,6 @@ Everything M0–M6 is implemented, tested (168 specs), documented, and on `origi
 | ~~**Semantic search — live smoke test**~~ ✅ done | `search/embedding/http-embedder.ts` | **Verified live (2026-06-23)** against the real 397-skill vault + Ollama `nomic-embed-text`: embeddings build (397×768-dim), hybrid fusion ranks well, filters/`pageSize` work, stopped-server → lexical fallback (200). Note: CPU-only Ollama embeds the full catalog in ~50–60 s (search serves lexical meanwhile); a GPU or smaller model is faster. Driven via `bun run dev` (hot-reload into the vault) + the `obsidian` CLI (`plugin:reload`, `eval`, `dev:errors`). |
 | ~~**Embedding auto-retry**~~ ✅ done | `search/semantic-search-backend.ts`, `server/registry-controller.ts`, `plugin.ts` | `SemanticSearchBackend` now exposes `embeddingState` (`idle`/`building`/`ready`/`failed`); `RegistryController.embeddingsNeedRetry` surfaces `failed`; the plugin retries on a 30 s `registerInterval` (only when `failed`, never interrupting a `building` pass). **Verified live**: `failed → building → ready` after a dead endpoint was fixed, with no manual reindex. |
 | ~~**Hosted-api backend**~~ ✅ done | `search/embedding/hosted-embedding.ts`, `search-backend-factory.ts` | `hosted-api` → `SemanticSearchBackend(HttpEmbedder(...))` with the endpoint/model/key resolved by `resolveHostedEmbedderConfig` (providers: openai/voyage/jina/custom; all OpenAI-compatible `/v1/embeddings`). Settings UI: provider dropdown + (custom) base URL + model + password-masked key. **Verified live** via the `custom` provider pointed at local Ollama (building→ready, fused results). Privacy: queries + skill metadata are sent to the provider; bodies are not. |
-| ~~**qmd sidecar backend**~~ ❌ dropped | — | Explored, then removed by decision: qmd's BM25 mode duplicated the built-in lexical backend, and its hybrid mode was heavy/fragile (needs qmd's own model; GPU-OOM'd in testing) and overlapped the embedding backends. The `qmd-sidecar` kind + its settings fields were deleted. The §8.4 / §11 design sections below are historical only. |
 | **MCP session TTL**                                 | `mcp/mcp-server.ts`                                                                                               | The handler is stateless today (no leak). If session state is added later, expire idle sessions.                                                                                                                                                                                                                                         |
 | ~~**Trusted conformance**~~ ❌ won't do | — | Per decision: not implementing JWS signing / SPIFFE-DID identity / provenance. Low value for a local-first, loopback, single-user setup. |
 | **Real-domain publishing + federation**             | —                                                                                                                 | Out of scope for local-first; §18.                                                                                                                                                                                                                                                                                                       |
@@ -88,7 +87,7 @@ The plugin wires together five subsystems inside a single Obsidian plugin proces
 
 1. **Skill scanner** — finds SKILL.md files in user-configured folders, parses YAML frontmatter, enriches metadata deterministically (no LLM calls), builds `CatalogEntry` objects.
 2. **Catalog builder** — assembles `AiCatalog` from scanned skills + manually configured resources (MCP server cards, A2A agents, nested catalogs).
-3. **Search backend** — pluggable; default is MiniSearch BM25+ in-process (zero download); optional: Transformers.js ONNX local model (~23 MB), qmd sidecar (full pipeline), hosted embedding API (BYOK).
+3. **Search backend** — pluggable; default is MiniSearch BM25+ in-process (zero download); optional: a local OpenAI-compatible embedding server or a hosted embedding API (BYOK), both fused with BM25 via RRF.
 4. **HTTP server** — Node.js `http.createServer`, binds to `127.0.0.1:<configuredPort>`, bearer-token auth on all routes except `/.well-known/ai-catalog.json`, serves the catalog and registry API.
 5. **MCP endpoint** — Code Mode pattern mounted at `/mcp` on the same HTTP server; exposes `search`, `get_skill`, and `execute` tools; uses `quickjs-emscripten` for sandboxed code execution.
 
@@ -123,7 +122,6 @@ The plugin wires together five subsystems inside a single Obsidian plugin proces
 | **Federation** (`POST /search?federation=auto` referral chaining)                                     | Requires crawling external registries                                           |
 | **HuggingFace Discover interop**                                                                      | Depends on real-domain publishing                                               |
 | **Semantic vector search** (Transformers.js ONNX)                                                     | Implemented as opt-in backend; not the default                                  |
-| **qmd sidecar backend**                                                                               | Documented and architecturally supported; requires user to install qmd globally |
 | **Hosted embedding API**                                                                              | BYOK, opt-in                                                                    |
 | **`POST /explore` facets**                                                                            | Returns 501; implementation is straightforward to add in v2                     |
 | **OpenAPI tool entries**                                                                              | Settings form stub; enrichment from spec auto-extraction deferred               |
@@ -158,7 +156,7 @@ The plugin wires together five subsystems inside a single Obsidian plugin proces
 │  │ gray-   │ │ JSON     │ │ LexicalSB  │ └────┬─────┘                 │
 │  │ matter  │ │ build    │ │ (default)  │      │                        │
 │  │ derive  │ │          │ │ LocalModel │      │  Routes:               │
-│  │ tags,RQ │ │          │ │ QMDSidecar │      │  GET /.well-known/     │
+│  │ tags,RQ │ │          │ │            │      │  GET /.well-known/     │
 │  └─────────┘ └──────────┘ │ HostedAPI  │      │    ai-catalog.json     │
 │        │          │        └──────┬─────┘      │  POST /search          │
 │        └──────────┘               │            │  POST /explore (501)   │
@@ -383,17 +381,13 @@ export type ManualResource = z.infer<typeof ManualResourceSchema>
 
 // ---- Search backend settings ----
 
-export type SearchBackendKind = 'lexical' | 'local-model' | 'qmd-sidecar' | 'hosted-api'
+export type SearchBackendKind = 'lexical' | 'local-model' | 'hosted-api'
 
 export const SearchBackendConfigSchema = z.object({
-    kind: z.enum(['lexical', 'local-model', 'qmd-sidecar', 'hosted-api']).default('lexical'),
+    kind: z.enum(['lexical', 'local-model', 'hosted-api']).default('lexical'),
     // local-model options:
     modelId: z.string().default('Xenova/all-MiniLM-L6-v2'),
     modelCacheDir: z.string().optional(),
-    // qmd-sidecar options:
-    qmdExecutable: z.string().default('qmd'),
-    qmdDaemonPort: z.number().int().optional(),
-    qmdIndexPath: z.string().optional(),
     // hosted-api options:
     apiProvider: z.enum(['openai', 'voyage', 'cohere', 'jina']).optional(),
     apiKey: z.string().optional(),
@@ -559,11 +553,6 @@ Each resource renders as a collapsible sub-section (using `containerEl.createEl(
 │  Cache dir [<plugin data dir>       ]                         │
 │  Status   ● Model not downloaded yet  [Download now]         │
 │                                                               │
-│  (if qmd-sidecar selected:)                                   │
-│  qmd path [qmd                      ]  [Check availability]  │
-│  Index path[<vault>/.obsidian/...   ]                         │
-│  Status   ● qmd not found in PATH                            │
-│                                                               │
 │  (if hosted-api selected:)                                    │
 │  Provider [OpenAI ▼]  Model [text-embedding-3-small]         │
 │  API key  [••••••••••••••••••]  ⚠ stored in plugin data       │
@@ -715,7 +704,6 @@ function deriveTags(fm: SkillFrontmatter): string[] {
     const allowedTools = fm['allowed-tools'] ?? ''
     if (/WebFetch|WebSearch/.test(allowedTools)) tags.add('uses-web')
     if (/\bBash\b/.test(allowedTools)) tags.add('uses-bash')
-    if (/mcp__qmd/.test(allowedTools)) tags.add('uses-qmd')
     if (/\b(Write|Edit)\b/.test(allowedTools)) tags.add('writes-files')
 
     return [...tags].sort()
@@ -958,7 +946,7 @@ export interface SearchBackend {
     dispose(): Promise<void>
 }
 
-export type SearchBackendKind = 'lexical' | 'local-model' | 'qmd-sidecar' | 'hosted-api'
+export type SearchBackendKind = 'lexical' | 'local-model' | 'hosted-api'
 ```
 
 ### 8.2 Default: LexicalSearchBackend (MiniSearch BM25+)
@@ -1074,12 +1062,6 @@ ard_score = round(min_max_normalize(rrf_score) * 100)
 
 `isReady()` returns `false` until model loaded + index built; the HTTP server returns an empty result set with a `503` if invoked before ready, or falls back to the lexical backend.
 
-### 8.4 QMDSidecarSearchBackend (optional, for qmd power users)
-
-Spawns `qmd` CLI or `qmd mcp --http --port <n>` daemon. Uses `store.searchLex()` (BM25 only, no model download) by default; upgrades to `store.search()` (hybrid) if the user opts in and the 318 MB embedding model is already cached. Score mapping: `Math.round(qmdScore * 100)` (qmd returns 0.0–1.0 floats). `isReady()` checks: qmd binary exists on PATH, SQLite index file exists, `store.getStatus().totalDocuments > 0`.
-
-Sidecar lifecycle: spawn from `onload` after first scan, kill from `onunload` via `this.register(() => sidecar.stop())`. Use module-level singleton guard (same pattern as HTTP server orphan cleanup — see Section 9.3).
-
 ### 8.5 HostedEmbeddingSearchBackend (optional, BYOK)
 
 Batch-embeds entries via API on `index()` call; caches vectors in plugin data dir (`Float32Array`, binary file). Query embedding at search time adds ~100–300 ms network latency. Combines cosine similarity with BM25 via RRF → ARD 0–100. `isReady()` requires `apiKey` configured and non-empty vector cache.
@@ -1092,8 +1074,6 @@ export function createSearchBackend(config: SearchBackendConfig): SearchBackend 
     switch (config.kind) {
         case 'local-model':
             return new LocalModelSearchBackend(config)
-        case 'qmd-sidecar':
-            return new QMDSidecarSearchBackend(config)
         case 'hosted-api':
             return new HostedEmbeddingSearchBackend(config)
         case 'lexical':
@@ -1607,54 +1587,6 @@ The threat model here is "accidental harmful code from the model" (infinite loop
 
 ---
 
-## 11. qmd / Sidecar Process
-
-qmd is **not** a required dependency. It is one of four pluggable backend options. This section covers the design for users who opt in.
-
-### 11.1 Why qmd Cannot Run In-Process
-
-`node-llama-cpp` (qmd's native ML runtime) requires native `.node` binaries. Obsidian plugins execute in the Electron renderer process; `node-llama-cpp` documentation explicitly states this crashes the application. Additionally, native addons must not be packed into ASAR archives and require compilation against the exact Electron ABI — not feasible for community plugin distribution.
-
-### 11.2 Sidecar Architecture
-
-```
-Obsidian Plugin Process                    qmd sidecar (system Node.js)
-(Electron renderer)                         (runs outside Electron)
-        │                                           │
-        │  spawn(process.execPath or 'node',        │
-        │         ['sidecar/qmd-bridge.mjs'])  ────►│
-        │                                           │
-        │  stdin: newline-delimited JSON-RPC  ─────►│  createStore() → SQLite + BM25
-        │  stdout: newline-delimited JSON-RPC ◄─────│  searchLex() → BM25 only (default)
-        │                                           │  search() → hybrid (opt-in)
-        │  proc.on('exit') → restart w/ backoff     │
-        │  plugin.register(() => sidecar.stop())    │  proc.exit(0) on 'exit' message
-```
-
-The sidecar script is a JS/MJS file bundled alongside `main.js` in the plugin output. It is NOT compiled into `main.js` (it must run as a separate Node.js process). It imports `@tobilu/qmd` from the user's global node_modules.
-
-**Key API calls:**
-
-| Operation             | qmd method                               | Models needed                    |
-| --------------------- | ---------------------------------------- | -------------------------------- |
-| BM25 search (default) | `store.searchLex(query, { limit })`      | None                             |
-| Hybrid search         | `store.search({ query, rerank: false })` | 318 MB embed model               |
-| Full pipeline         | `store.search({ query })`                | 2.1 GB (embed + rerank + expand) |
-| Index update          | `store.update()`                         | None                             |
-| Status                | `store.getStatus()`                      | None                             |
-
-Use `QMD_FORCE_CPU=1` env var to prevent GPU probe delays in the sidecar environment.
-
-### 11.3 Model Cache Location
-
-GGUF models are cached by qmd at `~/.cache/qmd/models/` (global user cache, NOT inside the plugin). The plugin does not download, bundle, or manage GGUF files. If the user has already used qmd (e.g., for vault semantic search), the model cache is already present — this makes the sidecar backend essentially zero-additional-cost for existing qmd users.
-
-### 11.4 Avoiding Bundle Bloat
-
-qmd is in `package.json` `devDependencies` or not listed at all — it is never bundled into `main.js`. The `QMDSidecarSearchBackend` class contains only the spawn/stdio logic and imports nothing from `@tobilu/qmd`. The sidecar script (`src/app/search/qmd-bridge.mjs`) is copied to `dist/` as a separate file and excluded from the main bundle via `Bun.build` `external` config.
-
----
-
 ## 12. Project Scaffolding
 
 ### 12.1 Files to Change from Template
@@ -1705,7 +1637,7 @@ qmd is in `package.json` `devDependencies` or not listed at all — it is never 
 
 - `minisearch`: Zero-dependency BM25+, 7 kB gzipped, proven in Obsidian Omnisearch.
 - `gray-matter`: Robust YAML+Markdown frontmatter parsing, handles edge cases in SKILL.md files.
-- `@modelcontextprotocol/sdk`: Already globally installed at `~/.bun/install/global/node_modules/@modelcontextprotocol/sdk`; v1.29.0 confirmed working with the session-map pattern used in qmd's MCP server.
+- `@modelcontextprotocol/sdk`: Already globally installed at `~/.bun/install/global/node_modules/@modelcontextprotocol/sdk`; v1.29.0 confirmed working with the session-map pattern.
 - `quickjs-emscripten-core` + `@jitl/quickjs-singlefile-cjs-release-sync`: WASM-boundary sandbox without native addons; singlefile CJS variant avoids `.wasm` file path issues in Electron.
 
 ### 12.3 Build Config Adaptations
@@ -1714,21 +1646,9 @@ The template `scripts/build.ts` already uses `format: 'cjs'`, `target: 'node'`, 
 
 1. **QuickJS WASM**: The singlefile CJS variant bundles the WASM inline — no separate `.wasm` file needed. No build change required.
 
-2. **qmd bridge sidecar**: Add a second `Bun.build` call for the sidecar script (separate entrypoint, no bundling of qmd imports):
+2. **Transformers.js ONNX assets** (when implementing LocalModelSearchBackend): `.onnx` files must NOT go through esbuild; they are downloaded to a user cache dir at runtime. No build change needed for v1 (backend is opt-in and downloads at first use, not at build time).
 
-    ```typescript
-    await Bun.build({
-        entrypoints: ['src/app/search/qmd-bridge.mjs'],
-        outdir: 'dist',
-        external: ['@tobilu/qmd', 'node-llama-cpp', 'better-sqlite3'],
-        format: 'esm',
-        target: 'node'
-    })
-    ```
-
-3. **Transformers.js ONNX assets** (when implementing LocalModelSearchBackend): `.onnx` files must NOT go through esbuild; they are downloaded to a user cache dir at runtime. No build change needed for v1 (backend is opt-in and downloads at first use, not at build time).
-
-4. **`EXTERNAL_MODULES`**: No changes needed — `obsidian`, `electron`, `@codemirror/*` remain the only externals. All new runtime dependencies are pure JS/WASM and bundle cleanly.
+3. **`EXTERNAL_MODULES`**: No changes needed — `obsidian`, `electron`, `@codemirror/*` remain the only externals. All new runtime dependencies are pure JS/WASM and bundle cleanly.
 
 ---
 
@@ -1768,9 +1688,7 @@ src/
     │   ├── search-backend-factory.ts # createSearchBackend()
     │   ├── lexical-search-backend.ts # LexicalSearchBackend (MiniSearch BM25+)
     │   ├── local-model-backend.ts    # LocalModelSearchBackend (Transformers.js, opt-in)
-    │   ├── qmd-sidecar-backend.ts    # QMDSidecarSearchBackend (opt-in)
-    │   ├── hosted-api-backend.ts     # HostedEmbeddingSearchBackend (opt-in, BYOK)
-    │   └── qmd-bridge.mjs            # Sidecar script (separate Bun.build entrypoint)
+    │   └── hosted-api-backend.ts     # HostedEmbeddingSearchBackend (opt-in, BYOK)
     ├── server/
     │   ├── http-server.ts            # ArdHttpServer (node:http, lifecycle)
     │   ├── router.ts                 # Route dispatch, auth middleware
@@ -1941,7 +1859,7 @@ src/
 
 **Why HTTP, not bundled Transformers.js:** the original §8.3 plan bundled `@huggingface/transformers` + ONNX-WASM and downloaded a ~23 MB model — exactly the bloat the v1 "zero mandatory downloads" non-goal forbids, plus a native-binary bundling minefield. Delegating to a server the user already runs gives *real* neural semantics with **zero bundle weight (still 1.65 MB) and zero managed download**, and the unreachable-server case degrades to lexical. Config: `embeddingServerUrl` (default `http://localhost:11434/v1`) + `embeddingModel` (default `nomic-embed-text`).
 
-So `local-model` is wired end-to-end and safe today. Remaining: a **live smoke test against a running server** (none was up in the build env — see §1b). qmd/hosted backends are still deferred; `hosted-api` is now mostly a remote-URL + API-key variant of `HttpEmbedder`. The deliverables below are superseded by this HTTP approach (kept as historical rationale).
+So `local-model` is wired end-to-end and safe today, and `hosted-api` ships as a remote-URL + API-key variant of `HttpEmbedder` (see §1a, both verified live). The deliverables below are superseded by this HTTP approach (kept as historical rationale).
 
 **Deliverables:**
 
@@ -1950,7 +1868,6 @@ So `local-model` is wired end-to-end and safe today. Remaining: a **live smoke t
 - RRF score fusion of BM25 + cosine similarity → ARD 0–100.
 - First-run download progress indicator in settings UI (`Notice`).
 - `isReady()` returns `false` until model loaded; HTTP server falls back to lexical during loading.
-- `QMDSidecarSearchBackend` (BM25 mode): spawn, stdio JSON-RPC, `searchLex`, score mapping.
 - `HostedEmbeddingSearchBackend`: OpenAI/Voyage/Jina API wrapper, cached vectors.
 - Backend selector in settings with per-backend sub-form (Section 6.2 Section 4).
 
@@ -1958,7 +1875,6 @@ So `local-model` is wired end-to-end and safe today. Remaining: a **live smoke t
 
 - Switching to `local-model` backend in settings triggers a download progress notice.
 - After download, `POST /search "help me write documentation"` returns semantically relevant results that differ from lexical results for query terms not in skill text.
-- `qmd-sidecar` backend correctly detects qmd absence and shows error in settings.
 - Switching backends does not require Obsidian restart.
 
 ---
@@ -2146,7 +2062,7 @@ All skill data stays on the local machine. No telemetry. No cloud sync. The cata
 | **Linux `fs.watch` non-recursive**                                                | Known                                     | Fall back to `registerInterval` poll every 5 min on Linux. Document limitation.                                                                                                                                                                                                                                                                     |
 | **Electron ABI for native addons**                                                | Known — no native addons used             | `quickjs-emscripten` is WASM, `gray-matter` and `minisearch` are pure JS. No native addons in the default stack.                                                                                                                                                                                                                                    |
 | **QuickJS sync variant cannot bridge async host calls**                           | Known, accepted                           | Pre-inject full catalog metadata as JSON. `getSkillBody()` returns null in sandbox; model uses `get_skill` tool for bodies. Upgrade path: `@sebastianwessel/quickjs` ASYNCIFY variant.                                                                                                                                                              |
-| **MCP `WebStandardStreamableHTTPServerTransport` API stability**                  | Low risk                                  | SDK v1.29.0 confirmed working in qmd reference implementation. Pin version.                                                                                                                                                                                                                                                                         |
+| **MCP `WebStandardStreamableHTTPServerTransport` API stability**                  | Low risk                                  | SDK v1.29.0 confirmed working against the official MCP client. Pin version.                                                                                                                                                                                                                                                                         |
 | **TypeScript in `execute` tool**                                                  | OPEN                                      | QuickJS only runs JavaScript. Tool description instructs model to write plain JS. If TS becomes important, integrate `@sebastianwessel/quickjs` (has TS support) in v2.                                                                                                                                                                             |
 | **`representativeQueries` heuristic quality for context/barrel skills**           | OPEN                                      | Context skills often lack `description` and `when_to_use`. The heuristic may produce <2 queries → field omitted. Acceptable; the ARD spec makes this field optional.                                                                                                                                                                                |
 | **gray-matter YAML edge cases**                                                   | Low risk                                  | Skills with multi-line strings or special characters in frontmatter may fail parsing. Catch all errors, log, skip.                                                                                                                                                                                                                                  |
@@ -2218,9 +2134,7 @@ Switch `execute` tool to `@sebastianwessel/quickjs` (ASYNCIFY-based WASM, ~2.6 M
 | Live ARD catalog             | `https://huggingface.co/.well-known/ai-catalog.json`                    |
 | Plugin template              | `/home/sebastien/wks/obsidian-plugin-template`                          |
 | HTTP server prior art        | `/home/sebastien/wks/obsidian-cli-rest/src/app/services/http-server.ts` |
-| qmd SDK types                | `~/.bun/install/global/node_modules/@tobilu/qmd/dist/index.d.ts`        |
 | MCP SDK                      | `~/.bun/install/global/node_modules/@modelcontextprotocol/sdk`          |
-| MCP server reference         | `~/.bun/install/global/node_modules/@tobilu/qmd/dist/mcp/server.js`     |
 | Skills vault                 | `/c/users/trankill/My Drive/Notes/Seb/.claude/skills/`                  |
 | Inline worker pattern        | `github.com/RyotaUshio/obsidian-web-worker-example`                     |
 | MiniSearch                   | `github.com/lucaong/minisearch` (v7.x, BM25+)                           |

@@ -19,8 +19,8 @@ Technical reference for the plugin's settings. The user-facing version is in [`d
 | `server.bindAddress` | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                                      |
 | `server.bearerToken` | string                  | `""` → generated                                | 64 hex chars once generated.                                                       |
 | `server.enableCors`  | boolean                 | `true`                                          | `Access-Control-Allow-Origin: *`.                                                  |
-| `searchBackend.kind` | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `qmd-sidecar` \| `hosted-api` (last three deferred). |
-| `searchBackend.*`    | —                       | —                                               | Model id, qmd path, API provider/key for future backends.                          |
+| `searchBackend.kind` | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `hosted-api`.                                        |
+| `searchBackend.*`    | —                       | —                                               | Embedding server URL/model, or hosted API provider/base URL/model/key.             |
 | `lastScanStats`      | object                  | `{0,0}`                                         | Internal: last scan counts + timestamp.                                            |
 
 `ManualResource`: `{ id, enabled, type, slug, displayName, description?, url?, inlineData?, capabilities[], tags[], representativeQueries[] }` where `type` is one of the MCP/A2A/catalog/registry media types.
