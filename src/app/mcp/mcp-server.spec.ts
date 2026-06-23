@@ -88,8 +88,9 @@ describe('handleMcpMessage', () => {
     })
 
     it('reports execute errors as tool errors, not RPC errors', async () => {
-        const res: any = await call(6, 'execute', { code: 'while(true){}' })
+        const res: any = await call(6, 'execute', { code: 'throw new Error("boom")' })
         expect(res.result.isError).toBe(true)
+        expect(res.error).toBeUndefined()
     })
 
     it('returns null for the initialized notification', async () => {

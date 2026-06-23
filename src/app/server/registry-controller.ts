@@ -1,6 +1,7 @@
 import { CatalogService } from '../catalog/catalog-service'
 import { manualResourcesToEntries } from '../catalog/resource-mapper'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
+import { createSearchBackend } from '../search/search-backend-factory'
 import type { SearchBackend } from '../search/search-backend'
 import { FsSkillFileService } from '../skills/skill-file-server'
 import type { CatalogEntry, HostInfo } from '../types/ard.types'
@@ -17,7 +18,7 @@ import { createRouter, type RouterDeps } from './router'
  * can swap the catalog and reindex in place while the server keeps serving.
  */
 export class RegistryController {
-    private readonly search: SearchBackend = new LexicalSearchBackend()
+    private search: SearchBackend = new LexicalSearchBackend()
     private server: ArdHttpServer | null = null
     private deps: RouterDeps | null = null
     private catalog: CatalogService | null = null
@@ -30,6 +31,7 @@ export class RegistryController {
     async start(settings: PluginSettings): Promise<void> {
         await this.stop()
 
+        this.search = createSearchBackend(settings.searchBackend)
         const baseUrl = `http://127.0.0.1:${settings.server.port}`
         const catalog = await this.buildCatalog(settings)
         const deps: RouterDeps = {

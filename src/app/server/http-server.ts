@@ -9,6 +9,9 @@ import type { RegistryRequest, RouteHandler } from './router'
  * the {@link RegistryResponse} back. Binds to loopback only. All behaviour lives
  * in the router; this class owns the socket lifecycle.
  */
+const MAX_LISTEN_RETRIES = 3
+const LISTEN_RETRY_MS = 500
+
 export class ArdHttpServer {
     private server: Server | null = null
 
@@ -18,19 +21,20 @@ export class ArdHttpServer {
         if (this.server) {
             await this.stop()
         }
-        const server = createServer((req, res) => {
-            void this.handle(req, res)
-        })
-        this.server = server
-
-        await new Promise<void>((resolve, reject) => {
-            const onError = (err: Error): void => reject(err)
-            server.once('error', onError)
-            server.listen(port, bindAddress, () => {
-                server.removeListener('error', onError)
-                resolve()
-            })
-        })
+        // Retry EADDRINUSE a few times: on hot-reload the OS can lag releasing
+        // the previous listener for a few hundred ms.
+        for (let attempt = 0; ; attempt++) {
+            try {
+                this.server = await listenOnce(this.handler, port, bindAddress)
+                return
+            } catch (error) {
+                const code = (error as { code?: string }).code
+                if (code !== 'EADDRINUSE' || attempt >= MAX_LISTEN_RETRIES) {
+                    throw error
+                }
+                await new Promise<void>((resolve) => window.setTimeout(resolve, LISTEN_RETRY_MS))
+            }
+        }
     }
 
     async stop(): Promise<void> {
@@ -53,17 +57,35 @@ export class ArdHttpServer {
         const address = this.server?.address()
         return address && typeof address === 'object' ? address.port : null
     }
+}
 
-    private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-        try {
-            const request = await toRegistryRequest(req)
-            const response = await this.handler(request)
-            res.writeHead(response.status, response.headers)
-            res.end(response.body)
-        } catch {
-            res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-            res.end(JSON.stringify({ errorCode: 'INTERNAL', message: 'Internal server error.' }))
-        }
+/** Create + bind a server once, resolving with it or rejecting on listen error. */
+function listenOnce(handler: RouteHandler, port: number, bindAddress: string): Promise<Server> {
+    return new Promise<Server>((resolve, reject) => {
+        const server = createServer((req, res) => {
+            void handleRequest(handler, req, res)
+        })
+        const onError = (err: Error): void => reject(err)
+        server.once('error', onError)
+        server.listen(port, bindAddress, () => {
+            server.removeListener('error', onError)
+            resolve(server)
+        })
+    })
+}
+
+async function handleRequest(
+    handler: RouteHandler,
+    req: IncomingMessage,
+    res: ServerResponse
+): Promise<void> {
+    try {
+        const response = await handler(await toRegistryRequest(req))
+        res.writeHead(response.status, response.headers)
+        res.end(response.body)
+    } catch {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ errorCode: 'INTERNAL', message: 'Internal server error.' }))
     }
 }
 

@@ -126,7 +126,8 @@ export class ArdServerPlugin extends Plugin {
             }
             const serverChanged =
                 previous.server.port !== next.server.port ||
-                previous.server.bindAddress !== next.server.bindAddress
+                previous.server.bindAddress !== next.server.bindAddress ||
+                previous.searchBackend.kind !== next.searchBackend.kind
             if (!this.registry.isRunning || serverChanged) {
                 await this.startRegistry()
             } else {
