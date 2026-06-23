@@ -65,8 +65,9 @@ Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: 
 
 ## Commands
 
-| Command                                          | Description                                             |
-| ------------------------------------------------ | ------------------------------------------------------- |
-| Open the plugin settings → **Rescan skills now** | Re-scan the configured folders and rebuild the catalog. |
+| Command                                          | Description                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Open the plugin settings → **Rescan skills now** | Re-scan the configured folders and rebuild the catalog.                               |
+| Open the plugin settings → **Reindex**           | Rebuild the search index over the current catalog without rescanning folders.         |
 
-After editing a skill, click **Rescan skills now** to pick up the change, or enable **Watch folders for changes** (Skill folders section, off by default) to rescan automatically when a `SKILL.md` changes.
+After editing a skill, click **Rescan skills now** to pick up the change, or enable **Watch folders for changes** (Skill folders section, off by default) to rescan automatically when a `SKILL.md` changes. Use **Reindex** (Search backend section) only when the catalog is unchanged but you want to refresh the index — e.g. after switching backend.
