@@ -88,4 +88,24 @@ describe('RegistryController', () => {
         const body = (await res.json()) as { entries: Array<{ identifier: string }> }
         expect(body.entries[0]?.identifier).toBe('urn:air:obsidian:mcp:news')
     })
+
+    it('merges scanned skill entries with manual resources', async () => {
+        controller = new RegistryController()
+        await controller.start(settingsWith([mcpResource()]))
+
+        await controller.setSkillEntries(settingsWith([mcpResource()]), [
+            {
+                identifier: 'urn:air:obsidian:skills:my-skill',
+                displayName: 'My Skill',
+                type: 'application/ai-skill',
+                url: 'http://127.0.0.1/skills/my-skill/SKILL.md'
+            }
+        ])
+
+        expect(controller.catalogSize).toBe(2)
+        const res = await fetch(`http://127.0.0.1:${controller.port}/.well-known/ai-catalog.json`)
+        const body = (await res.json()) as { entries: Array<{ identifier: string }> }
+        expect(body.entries.map((e) => e.identifier)).toContain('urn:air:obsidian:skills:my-skill')
+        expect(body.entries.map((e) => e.identifier)).toContain('urn:air:obsidian:mcp:weather')
+    })
 })

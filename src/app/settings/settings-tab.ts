@@ -158,17 +158,31 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 )
         })
 
-        new Setting(containerEl).addButton((button) =>
-            button
-                .setButtonText('Add folder')
-                .setCta()
-                .onClick(async () => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.skillFolders.push('')
+        new Setting(containerEl)
+            .addButton((button) =>
+                button
+                    .setButtonText('Add folder')
+                    .setCta()
+                    .onClick(async () => {
+                        await this.plugin.updateSettings((draft) => {
+                            draft.skillFolders.push('')
+                        })
+                        this.display()
                     })
-                    this.display()
-                })
-        )
+            )
+            .addButton((button) =>
+                button
+                    .setButtonText('Rescan skills now')
+                    .setTooltip('Re-scan the configured folders and rebuild the catalog')
+                    .onClick(async () => {
+                        button.setButtonText('Scanning…').setDisabled(true)
+                        await this.plugin.rescanSkills()
+                        new Notice(
+                            `Scanned ${this.plugin.settings.lastScanStats.skillCount} skills`
+                        )
+                        this.display()
+                    })
+            )
     }
 
     // ----- Section 3: Additional resources -----

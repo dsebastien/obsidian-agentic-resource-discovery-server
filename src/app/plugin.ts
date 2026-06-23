@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, parsePluginSettings } from './types/plugin-settings.i
 import type { PluginSettings } from './types/plugin-settings.intf'
 import { ArdServerSettingTab } from './settings/settings-tab'
 import { RegistryController } from './server/registry-controller'
+import { scanSkillFolders } from './skills/skill-scanner'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
 
@@ -32,10 +33,12 @@ export class ArdServerPlugin extends Plugin {
 
         if (this.settings.enabled) {
             await this.startRegistry()
+            // Scan skills after the workspace settles so we don't block load or
+            // drown in vault events. The scan itself yields between chunks.
+            this.app.workspace.onLayoutReady(() => {
+                void this.rescanSkills()
+            })
         }
-
-        // Milestones M2+: scan skill folders on workspace.onLayoutReady
-        // (non-blocking), then rebuild the catalog and reindex.
     }
 
     override onunload(): void {
@@ -69,6 +72,36 @@ export class ArdServerPlugin extends Plugin {
 
     async saveSettings(): Promise<void> {
         await this.saveData(this.settings)
+    }
+
+    /**
+     * Scan the configured skill folders and feed the results into the catalog.
+     * Non-blocking: yields to the UI between chunks via window.setTimeout.
+     */
+    async rescanSkills(): Promise<void> {
+        if (!this.settings.enabled || this.settings.skillFolders.length === 0) {
+            return
+        }
+        const port = this.registry.port ?? this.settings.server.port
+        try {
+            const result = await scanSkillFolders(
+                this.settings.skillFolders,
+                { publisher: this.settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
+                { scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0)) }
+            )
+            await this.registry.setSkillEntries(this.settings, result.entries)
+            this.settings = produce(this.settings, (draft) => {
+                draft.lastScanStats = {
+                    skillCount: result.skillCount,
+                    errorCount: result.errorCount,
+                    lastScanAt: new Date().toISOString()
+                }
+            })
+            await this.saveSettings()
+            log(`Scanned ${result.skillCount} skills (${result.errorCount} errors)`, 'debug')
+        } catch (error) {
+            log('Skill scan failed', 'error', error)
+        }
     }
 
     private async startRegistry(): Promise<void> {

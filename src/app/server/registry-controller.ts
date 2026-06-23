@@ -2,7 +2,7 @@ import { CatalogService } from '../catalog/catalog-service'
 import { manualResourcesToEntries } from '../catalog/resource-mapper'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import type { SearchBackend } from '../search/search-backend'
-import type { HostInfo } from '../types/ard.types'
+import type { CatalogEntry, HostInfo } from '../types/ard.types'
 import type { PluginSettings } from '../types/plugin-settings.intf'
 import { ArdHttpServer } from './http-server'
 import { createRouter, type RouterDeps } from './router'
@@ -19,6 +19,8 @@ export class RegistryController {
     private server: ArdHttpServer | null = null
     private deps: RouterDeps | null = null
     private catalog: CatalogService | null = null
+    /** Entries from the latest skill scan; merged with manual resources. */
+    private skillEntries: CatalogEntry[] = []
 
     /** Build the catalog/index from settings and start the HTTP server. */
     async start(settings: PluginSettings): Promise<void> {
@@ -55,6 +57,12 @@ export class RegistryController {
         this.catalog = catalog
     }
 
+    /** Replace the scanned-skill entries and rebuild the catalog in place. */
+    async setSkillEntries(settings: PluginSettings, entries: CatalogEntry[]): Promise<void> {
+        this.skillEntries = entries
+        await this.rebuild(settings)
+    }
+
     async stop(): Promise<void> {
         await this.server?.stop()
         this.server = null
@@ -75,7 +83,10 @@ export class RegistryController {
 
     private async buildCatalog(settings: PluginSettings): Promise<CatalogService> {
         const catalog = new CatalogService(hostFrom(settings))
-        const entries = manualResourcesToEntries(settings.resources, settings.publisher)
+        const entries = [
+            ...manualResourcesToEntries(settings.resources, settings.publisher),
+            ...this.skillEntries
+        ]
         catalog.replaceEntries(entries)
         await this.search.index(entries)
         return catalog
