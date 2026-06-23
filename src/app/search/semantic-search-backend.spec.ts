@@ -109,6 +109,24 @@ describe('SemanticSearchBackend', () => {
         expect(results[0]?.entry.identifier).toBe('urn:air:obsidian:skills:weather')
     })
 
+    it('never contacts the embedder for an empty catalog', async () => {
+        let loads = 0
+        const embedder = { ...fakeEmbedder(() => [1, 0, 0]) }
+        const counting: typeof embedder = {
+            ...embedder,
+            load: async () => {
+                loads++
+                await embedder.load()
+            }
+        }
+        const backend = new SemanticSearchBackend(counting)
+        await backend.index([])
+        await backend.whenEmbeddingsSettled()
+        expect(loads).toBe(0)
+        expect(backend.embeddingsReady).toBe(false)
+        expect(await backend.search({ query: 'anything' })).toEqual([])
+    })
+
     it('a reindex replaces the prior vectors', async () => {
         const backend = new SemanticSearchBackend(fakeEmbedder(() => [1, 0, 0]))
         await backend.index(ENTRIES)

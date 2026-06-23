@@ -45,6 +45,13 @@ export class SemanticSearchBackend implements SearchBackend {
         this.vectors.replace([])
         this.entries = new Map(entries.map((entry) => [entry.identifier, entry]))
         await this.lexical.index(entries)
+        // An empty catalog (e.g. the initial index before the first skill scan)
+        // has nothing to embed — stay lexical-only and never contact the embedder,
+        // so startup doesn't fire a wasted (and cold/slow) probe at the server.
+        if (entries.length === 0) {
+            this.embeddingTask = Promise.resolve()
+            return
+        }
         this.embeddingTask = this.buildEmbeddings(entries, generation)
     }
 
