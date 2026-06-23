@@ -312,7 +312,11 @@ export class ArdServerSettingTab extends PluginSettingTab {
             })
 
         const kind = this.plugin.settings.searchBackend.kind
-        if (kind !== 'lexical') {
+        if (kind === 'local-model') {
+            new Setting(containerEl).setDesc(
+                `Hybrid search: lexical BM25 fused with on-device sentence embeddings (model "${this.plugin.settings.searchBackend.modelId}"). The model loads lazily on first use; until it's ready — or if it can't load — searches fall back to the built-in lexical backend automatically. Note: the embedding runtime is not bundled in this build yet, so this currently behaves as lexical.`
+            )
+        } else if (kind !== 'lexical') {
             new Setting(containerEl).setDesc(
                 `The "${BACKEND_LABELS[kind]}" backend is configured but not yet implemented (planned for a later milestone). Searches fall back to the built-in lexical backend.`
             )

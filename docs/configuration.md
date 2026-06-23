@@ -32,12 +32,13 @@ Manually add resources that aren't skills — MCP server cards, A2A agent cards,
 
 ## Search backend
 
-| Backend                                          | Status                                                     |
-| ------------------------------------------------ | ---------------------------------------------------------- |
-| BM25 lexical (built-in)                          | **Default.** In-process, zero download.                    |
-| Local embedding model / qmd sidecar / hosted API | Selectable but deferred — currently falls back to lexical. |
+| Backend                       | Status                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| BM25 lexical (built-in)       | **Default.** In-process, zero download.                                                             |
+| Local embedding model         | Hybrid (lexical + on-device semantic) — experimental; falls back to lexical until the model ships.  |
+| qmd sidecar / hosted API      | Selectable but deferred — currently falls back to lexical.                                          |
 
-The default needs no model and no network. Semantic backends are an opt-in future enhancement; selecting one today degrades gracefully to lexical search.
+The default needs no model and no network. The **local embedding model** backend adds semantic ranking (lexical BM25 fused with on-device sentence embeddings); it loads its model lazily and **degrades to lexical automatically** while the model is loading or if it can't load — so search never breaks. The embedding runtime isn't bundled in the current build yet, so this option behaves as lexical for now. Semantic backends honor the plugin's zero-mandatory-download principle: lexical stays the default.
 
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 
