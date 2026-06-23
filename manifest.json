@@ -1,0 +1,11 @@
+{
+    "id": "agentic-resource-discovery-server",
+    "name": "Agentic Resource Discovery Server",
+    "description": "Local-first Agentic Resource Discovery publisher and registry that serves your AI skills and tools to agents over a local HTTP and MCP server.",
+    "version": "0.0.0",
+    "minAppVersion": "1.4.0",
+    "isDesktopOnly": true,
+    "author": "Sébastien Dubois",
+    "authorUrl": "https://dsebastien.net",
+    "fundingUrl": "https://www.buymeacoffee.com/dsebastien"
+}

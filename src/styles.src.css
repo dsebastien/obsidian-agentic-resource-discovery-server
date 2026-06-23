@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+
+/* ========================================
+   SUPPORT & UI SECTIONS
+   ======================================== */
+
+/* Support section */
+.support-header-margin {
+    @apply mb-5;
+}
+
+/* Bearer token field — monospace so the secret is readable/selectable */
+.ard-token-field {
+    @apply font-mono;
+    width: 100%;
+}
