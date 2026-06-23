@@ -37,6 +37,12 @@ On a settings change the plugin decides between **restart** and **rebuild**:
 - **Rebuild in place** (swap catalog + reindex, server keeps serving) otherwise.
 - **Stop** when `enabled` becomes false.
 
+Each reconcile also calls `reconcileWatcher()` to start/stop the opt-in `SkillWatcher` to match `watchSkillFolders` + the (resolved) folder list.
+
+## Skill folder resolution
+
+Skill-folder inputs use the shared `FolderSuggest` (`settings/components/folder-suggest.ts`) for vault-folder autocomplete, which yields **vault-relative** paths. Since the scanner/watcher use Node `fs` (folders may be outside the vault), `ArdServerPlugin.resolveSkillFolders()` resolves each configured folder to an absolute path before scanning/watching: absolute paths are used as-is, relative paths are joined to `FileSystemAdapter.getBasePath()` (the vault root), and blanks are dropped.
+
 ## Environment
 
 - `OBSIDIAN_VAULT_LOCATION` (build-time, optional) — auto-copies `dist/` into a vault after `bun run dev`. See [DEVELOPMENT.md](../DEVELOPMENT.md).

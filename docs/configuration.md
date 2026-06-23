@@ -20,7 +20,11 @@ The **bind address is always `127.0.0.1`** and is not user-configurable — the 
 
 ## Skill folders
 
-A list of folders to scan for `SKILL.md` files. Folders may be outside the vault. The status line shows the result of the last scan. **Add folder** appends a row; **Rescan skills now** re-scans and rebuilds the catalog.
+A list of folders to scan for `SKILL.md` files. Each input has folder autocomplete: start typing to pick a **vault** folder (e.g. `.claude/skills`), or paste an **absolute** path for folders outside the vault. Vault-relative picks are resolved against your vault location automatically.
+
+- **Add folder** appends a row; the trash icon removes one.
+- **Watch folders for changes** (off by default) auto-rescans when a `SKILL.md` changes — best-effort; may not fire on cloud-synced/network folders.
+- **Rescan skills now** re-scans the folders and rebuilds the catalog. The status line shows the last scan's skill/error counts.
 
 ## Additional resources
 

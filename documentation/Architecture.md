@@ -37,17 +37,17 @@ settings (skill folders, resources)
 
 ## Module map (`src/app/`)
 
-| Area       | Modules                                                                                       | Responsibility                                                                                              |
-| ---------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `types/`   | `ard.types`, `plugin-settings.intf`, `skills/skill-frontmatter.types`                         | ARD wire types; Zod-validated settings + `parsePluginSettings`; skill frontmatter shapes.                   |
-| `domain/`  | `urn`                                                                                         | Build/validate `urn:air:` identifiers.                                                                      |
-| `catalog/` | `catalog-service`, `resource-mapper`                                                          | In-memory catalog → `ai-catalog.json`; manual resources → entries.                                          |
-| `skills/`  | `skill-parser`, `skill-enricher`, `skill-scanner`, `skill-file-server`                        | Parse frontmatter (js-yaml); enrich → entry (tags, queries, `x-osk-*`); discover/scan folders; serve files. |
-| `search/`  | `search-backend` (interface), `lexical-search-backend` (MiniSearch), `search-backend-factory` | Pluggable relevance ranking; 0–100 score.                                                                   |
-| `server/`  | `router` (pure), `http-server` (node:http adapter), `registry-controller`                     | HTTP behaviour; transport; lifecycle orchestration.                                                         |
-| `mcp/`     | `sandbox` (QuickJS), `mcp-server` (JSON-RPC + tools)                                          | Code Mode endpoint.                                                                                         |
-| `utils/`   | `token`, `path-safety`, `log`                                                                 | Bearer token; safe path join; logging.                                                                      |
-| top        | `plugin` (`ArdServerPlugin`), `settings/settings-tab`                                         | Obsidian lifecycle + settings UI.                                                                           |
+| Area       | Modules                                                                                       | Responsibility                                                                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types/`   | `ard.types`, `plugin-settings.intf`, `skills/skill-frontmatter.types`                         | ARD wire types; Zod-validated settings + `parsePluginSettings`; skill frontmatter shapes.                                                   |
+| `domain/`  | `urn`                                                                                         | Build/validate `urn:air:` identifiers.                                                                                                      |
+| `catalog/` | `catalog-service`, `resource-mapper`                                                          | In-memory catalog → `ai-catalog.json`; manual resources → entries.                                                                          |
+| `skills/`  | `skill-parser`, `skill-enricher`, `skill-scanner`, `skill-file-server`, `skill-watcher`       | Parse frontmatter (js-yaml); enrich → entry (tags, queries, `x-osk-*`); discover/scan folders; serve files; opt-in fs watching (debounced). |
+| `search/`  | `search-backend` (interface), `lexical-search-backend` (MiniSearch), `search-backend-factory` | Pluggable relevance ranking; 0–100 score.                                                                                                   |
+| `server/`  | `router` (pure), `http-server` (node:http adapter), `registry-controller`                     | HTTP behaviour; transport; lifecycle orchestration.                                                                                         |
+| `mcp/`     | `sandbox` (QuickJS), `mcp-server` (JSON-RPC + tools)                                          | Code Mode endpoint.                                                                                                                         |
+| `utils/`   | `token`, `path-safety`, `log`                                                                 | Bearer token; safe path join; logging.                                                                                                      |
+| top        | `plugin` (`ArdServerPlugin`), `settings/settings-tab`, `settings/components/folder-suggest`   | Obsidian lifecycle + settings UI; shared vault-folder autocomplete.                                                                         |
 
 ## Key seams
 

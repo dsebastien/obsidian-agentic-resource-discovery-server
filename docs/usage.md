@@ -10,7 +10,7 @@ The Agentic Resource Discovery Server publishes your AI Skills (and other agenti
 ## Getting started
 
 1. **Enable the plugin** (Settings → Community plugins).
-2. Open its settings and add one or more **skill folders**. A skill folder contains skill subfolders, each with a `SKILL.md` file (Anthropic Agent Skill format). Folders may be anywhere on disk — they don't have to be inside the vault.
+2. Open its settings and add one or more **skill folders**. A skill folder contains skill subfolders, each with a `SKILL.md` file (Anthropic Agent Skill format). Use the autocomplete to pick a vault folder (e.g. `.claude/skills`), or paste an absolute path for folders outside the vault.
 3. Click **Rescan skills now**. The status line reports how many skills were indexed and how many failed to parse.
 4. Copy the **bearer token** from the **Server** section — agents need it for every request except the public catalog.
 
