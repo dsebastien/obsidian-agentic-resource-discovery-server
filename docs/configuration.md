@@ -45,6 +45,8 @@ The default needs no model and no network. The **local embedding server** backen
 
 If the server is unreachable or slow to start, searches **fall back to lexical automatically** — search never breaks. Changing either field restarts the registry. With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the defaults. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
 
+Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server or a smaller embedding model is much faster. If the server starts *after* the plugin, use the **Reindex** button to pick it up.
+
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 
 ## Where settings are stored
