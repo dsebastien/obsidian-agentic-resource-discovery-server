@@ -38,4 +38,4 @@ Every endpoint except `/.well-known/ai-catalog.json` and `/health` needs `Author
 
 ### Changes to a skill aren't reflected
 
-Catalog rebuilds happen on startup and when you click **Rescan skills now** — automatic file-watching is planned. Rescan after editing.
+Catalog rebuilds happen on startup and when you click **Rescan skills now**. You can also enable **Watch folders for changes** (off by default) to auto-rescan when a `SKILL.md` changes — but it's best-effort and may not fire on cloud-synced/network folders, so the manual rescan stays the dependable path.

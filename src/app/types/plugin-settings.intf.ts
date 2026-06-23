@@ -92,7 +92,8 @@ export const PluginSettingsSchema = z.object({
     catalogIdentifier: z.string().optional(),
     // Skill scanning
     skillFolders: z.array(z.string()).default([]).catch([]),
-    autoRescanOnChange: z.boolean().default(true).catch(true),
+    /** Opt-in filesystem watching of skill folders (off by default; best-effort). */
+    watchSkillFolders: z.boolean().default(false).catch(false),
     // Manually-configured resources
     resources: z.array(ManualResourceSchema).default([]).catch([]),
     // Server + search

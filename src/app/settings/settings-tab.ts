@@ -159,6 +159,20 @@ export class ArdServerSettingTab extends PluginSettingTab {
         })
 
         new Setting(containerEl)
+            .setName('Watch folders for changes')
+            .setDesc(
+                'Automatically rescan when a SKILL.md changes. Off by default; best-effort — may ' +
+                    'not fire on network/cloud-synced (e.g. Google Drive) folders. Use Rescan if unsure.'
+            )
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.watchSkillFolders).onChange(async (value) => {
+                    await this.plugin.updateSettings((draft) => {
+                        draft.watchSkillFolders = value
+                    })
+                })
+            )
+
+        new Setting(containerEl)
             .addButton((button) =>
                 button
                     .setButtonText('Add folder')

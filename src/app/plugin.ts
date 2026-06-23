@@ -6,6 +6,7 @@ import type { PluginSettings } from './types/plugin-settings.intf'
 import { ArdServerSettingTab } from './settings/settings-tab'
 import { RegistryController } from './server/registry-controller'
 import { scanSkillFolders } from './skills/skill-scanner'
+import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
 
@@ -24,6 +25,11 @@ export class ArdServerPlugin extends Plugin {
 
     private readonly registry = new RegistryController()
 
+    private readonly watcher = new SkillWatcher(nodeFsWatchFn, {
+        set: (callback, ms) => window.setTimeout(callback, ms),
+        clear: (handle) => window.clearTimeout(handle as number)
+    })
+
     override async onload(): Promise<void> {
         log('Initializing', 'debug')
         await this.loadSettings()
@@ -37,11 +43,13 @@ export class ArdServerPlugin extends Plugin {
             // drown in vault events. The scan itself yields between chunks.
             this.app.workspace.onLayoutReady(() => {
                 void this.rescanSkills()
+                this.reconcileWatcher()
             })
         }
     }
 
     override onunload(): void {
+        this.watcher.stop()
         void this.registry.stop()
     }
 
@@ -133,8 +141,22 @@ export class ArdServerPlugin extends Plugin {
             } else {
                 await this.registry.rebuild(next)
             }
+            this.reconcileWatcher()
         } catch (error) {
             log('Failed to reconcile registry server', 'error', error)
+        }
+    }
+
+    /** Start or stop the opt-in skill-folder watcher to match current settings. */
+    private reconcileWatcher(): void {
+        const shouldWatch =
+            this.settings.enabled &&
+            this.settings.watchSkillFolders &&
+            this.settings.skillFolders.length > 0
+        if (shouldWatch) {
+            this.watcher.start(this.settings.skillFolders, () => void this.rescanSkills())
+        } else {
+            this.watcher.stop()
         }
     }
 }

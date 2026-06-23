@@ -69,4 +69,4 @@ Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: 
 | ------------------------------------------------ | ------------------------------------------------------- |
 | Open the plugin settings → **Rescan skills now** | Re-scan the configured folders and rebuild the catalog. |
 
-After editing a skill, click **Rescan skills now** to pick up the change (automatic file-watching is planned).
+After editing a skill, click **Rescan skills now** to pick up the change, or enable **Watch folders for changes** (Skill folders section, off by default) to rescan automatically when a `SKILL.md` changes.

@@ -13,7 +13,7 @@ Technical reference for the plugin's settings. The user-facing version is in [`d
 | `catalogDisplayName` | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                        |
 | `catalogIdentifier`  | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                           |
 | `skillFolders`       | string[]                | `[]`                                            | Absolute or vault-relative folders to scan.                                        |
-| `autoRescanOnChange` | boolean                 | `true`                                          | Reserved for file-watching (deferred).                                             |
+| `watchSkillFolders`  | boolean                 | `false`                                         | Opt-in fs watching of skill folders; debounced rescan on `SKILL.md` change.        |
 | `resources`          | ManualResource[]        | `[]`                                            | Manually configured non-skill entries.                                             |
 | `server.port`        | int 1024–65535          | `27182`                                         | Listen port.                                                                       |
 | `server.bindAddress` | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                                      |
