@@ -34,6 +34,9 @@ export class ArdServerPlugin extends Plugin {
      */
     private opChain: Promise<void> = Promise.resolve()
 
+    /** Set in onunload so no in-flight/queued op resurrects the server after stop. */
+    private disposed = false
+
     private readonly watcher = new SkillWatcher(nodeFsWatchFn, {
         set: (callback, ms) => window.setTimeout(callback, ms),
         clear: (handle) => window.clearTimeout(handle as number)
@@ -68,7 +71,9 @@ export class ArdServerPlugin extends Plugin {
 
     /** Run a registry-mutating operation after any in-flight one completes. */
     private serialize(op: () => Promise<void>): Promise<void> {
-        const next = this.opChain.then(op, op)
+        // Skip if the plugin has unloaded by the time this op is dequeued.
+        const guarded = (): Promise<void> => (this.disposed ? Promise.resolve() : op())
+        const next = this.opChain.then(guarded, guarded)
         this.opChain = next.then(
             () => undefined,
             () => undefined
@@ -89,8 +94,11 @@ export class ArdServerPlugin extends Plugin {
     }
 
     override onunload(): void {
+        this.disposed = true
         this.watcher.stop()
-        void this.registry.stop()
+        this.registry.stop().catch((error: unknown) => {
+            log('Registry stop failed on unload', 'error', error)
+        })
     }
 
     /** Load + validate persisted settings, always yielding a complete object. */
@@ -142,6 +150,9 @@ export class ArdServerPlugin extends Plugin {
                 { publisher: this.settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
                 { scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0)) }
             )
+            if (this.disposed) {
+                return // unloaded mid-scan; don't resurrect the registry
+            }
             await this.registry.setSkillEntries(this.settings, result.entries, result.folders)
             this.settings = produce(this.settings, (draft) => {
                 draft.lastScanStats = {

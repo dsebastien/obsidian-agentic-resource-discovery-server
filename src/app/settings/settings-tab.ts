@@ -113,7 +113,10 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     })
             )
 
-        new Setting(containerEl).setName('Catalog name').addText((text) =>
+        new Setting(containerEl)
+            .setName('Catalog name')
+            .setDesc('Human-readable name for this catalog, shown in the served ai-catalog.json.')
+            .addText((text) =>
             text.setValue(this.plugin.settings.catalogDisplayName).onChange(async (value) => {
                 await this.plugin.updateSettings((draft) => {
                     draft.catalogDisplayName = value
