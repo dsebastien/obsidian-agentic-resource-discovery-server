@@ -1,4 +1,9 @@
-# Release Notes
+---
+title: Release notes
+nav_order: 99
+---
+
+# Release notes
 
 ## 0.0.1 (2026-06-24)
 

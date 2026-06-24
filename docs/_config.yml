@@ -1,7 +1,7 @@
-title: Plugin template
-description: Documentation for the Plugin template Obsidian plugin.
+title: Agentic Resource Discovery Server
+description: Documentation for the Agentic Resource Discovery Server Obsidian plugin.
 url: https://dsebastien.github.io
-baseurl: /obsidian-plugin-template
+baseurl: /obsidian-agentic-resource-discovery-server
 
 remote_theme: just-the-docs/just-the-docs
 
@@ -9,7 +9,17 @@ plugins:
     - jekyll-remote-theme
 
 aux_links:
-    GitHub: https://github.com/dsebastien/obsidian-plugin-template
+    GitHub: https://github.com/dsebastien/obsidian-agentic-resource-discovery-server
+    Buy me a coffee: https://www.buymeacoffee.com/dsebastien
+aux_links_new_tab: true
+
+# Link to the source on GitHub for the "Edit this page" footer links.
+gh_edit_link: true
+gh_edit_link_text: Edit this page on GitHub
+gh_edit_repository: https://github.com/dsebastien/obsidian-agentic-resource-discovery-server
+gh_edit_branch: main
+gh_edit_source: docs
+gh_edit_view_mode: tree
 
 search_enabled: true
 search:
@@ -21,5 +31,4 @@ search:
 heading_anchors: true
 color_scheme: light
 
-exclude:
-    - SUMMARY.md
+footer_content: 'Agentic Resource Discovery Server — by <a href="https://dsebastien.net">Sébastien Dubois</a>. Released under the <a href="https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/blob/main/LICENSE">MIT license</a>.'
