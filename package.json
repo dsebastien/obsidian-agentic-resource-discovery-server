@@ -1,6 +1,6 @@
 {
     "name": "agentic-resource-discovery-server",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "description": "Local-first Agentic Resource Discovery publisher and registry that serves your AI skills and tools to agents over a local HTTP and MCP server.",
     "author": {
         "name": "Sébastien Dubois",
