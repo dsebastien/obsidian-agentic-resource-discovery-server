@@ -8,7 +8,6 @@ Technical reference for the plugin's settings. The user-facing version is in [`d
 
 | Field                | Type                    | Default                                         | Notes                                                                              |
 | -------------------- | ----------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `enabled`            | boolean                 | `true`                                          | Master switch; when false the registry is stopped.                                 |
 | `publisher`          | string                  | `"obsidian"`                                    | URN publisher segment.                                                             |
 | `catalogDisplayName` | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                        |
 | `catalogIdentifier`  | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                           |
@@ -31,13 +30,12 @@ Persisted via Obsidian `saveData`/`loadData` to `.obsidian/plugins/agentic-resou
 
 ## Reconciliation rules
 
-On a settings change the plugin decides between **restart** and **rebuild**:
+The registry runs whenever the plugin is loaded; stop it by disabling the plugin in **Settings → Community plugins** (there is no separate in-plugin toggle). On a settings change the plugin decides between **restart** and **rebuild**:
 
-- **Restart** (new server) when `server.port`, `server.bindAddress`, or `searchBackend.kind` changes, or the server isn't running.
+- **Restart** (new server) when `server.port`, `server.bindAddress`, or any `searchBackend.*` field changes, or the server isn't running.
 - **Rebuild in place** (swap catalog + reindex, server keeps serving) otherwise.
-- **Stop** when `enabled` becomes false.
 
-Each reconcile also calls `reconcileWatcher()` to start/stop the opt-in `SkillWatcher` to match `watchSkillFolders` + the (resolved) folder list.
+All registry-mutating operations (start, rescan, reindex, reconcile) are **serialized** through one promise chain so a background scan and a concurrent settings change can't race; an `onunload` `disposed` guard prevents any in-flight op from resurrecting the server after the plugin unloads. Each reconcile also calls `reconcileWatcher()` to start/stop the opt-in `SkillWatcher` to match `watchSkillFolders` + the (resolved) folder list (and surfaces a Notice for folders that can't be watched).
 
 ## Skill folder resolution
 

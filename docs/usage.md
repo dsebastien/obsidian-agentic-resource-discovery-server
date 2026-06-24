@@ -14,7 +14,7 @@ The Agentic Resource Discovery Server publishes your AI Skills (and other agenti
 3. Click **Rescan skills now**. The status line reports how many skills were indexed and how many failed to parse.
 4. Copy the **bearer token** from the **Server** section — agents need it for every request except the public catalog.
 
-The server starts automatically when the plugin loads (if enabled) and binds to `http://127.0.0.1:<port>` (default port **27182**).
+The server starts automatically when the plugin loads and binds to `http://127.0.0.1:<port>` (default port **27182**). To stop it, disable the plugin in **Settings → Community plugins**.
 
 ## The endpoints
 
