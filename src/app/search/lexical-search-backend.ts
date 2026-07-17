@@ -108,4 +108,3 @@ function toIndexDoc(entry: CatalogEntry): IndexDoc {
         representativeQueries: (entry.representativeQueries ?? []).join(' ')
     }
 }
-

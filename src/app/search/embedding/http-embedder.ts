@@ -142,7 +142,10 @@ function parseEmbeddings(json: unknown, expected: number): number[][] {
         // Use the server's `index` only when it actually provides distinct ones;
         // otherwise (e.g. Ollama omits `index`) trust the response order, so a
         // missing field can't collapse every row to index 0 and risk a mis-map.
-        return { index: typeof index === 'number' ? index : position, embedding: embedding as number[] }
+        return {
+            index: typeof index === 'number' ? index : position,
+            embedding: embedding as number[]
+        }
     })
     rows.sort((a, b) => a.index - b.index)
     return rows.map((row) => row.embedding)

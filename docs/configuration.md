@@ -51,11 +51,11 @@ With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the d
 
 - **Provider** — `openai`, `voyage`, `jina`, or `custom`. For `custom`, also set an **API base URL** (any OpenAI-compatible gateway — Azure OpenAI, OpenRouter, a self-hosted proxy, …).
 - **Model** — leave blank to use the provider default (e.g. `text-embedding-3-small` for OpenAI).
-- **API key** — sent as a Bearer token; stored in plugin data, so treat it as a secret. **Privacy note:** your search queries and skill metadata (names, descriptions, tags) are sent to the provider to be embedded. Skill *bodies* are never sent.
+- **API key** — sent as a Bearer token; stored in plugin data, so treat it as a secret. **Privacy note:** your search queries and skill metadata (names, descriptions, tags) are sent to the provider to be embedded. Skill _bodies_ are never sent.
 
 If the embedding endpoint is unreachable, slow to start, or rejects the key, searches **fall back to lexical automatically** — search never breaks. Changing any backend field restarts the registry. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
 
-Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server, a hosted API, or a smaller model is much faster. If the embedding server starts *after* the plugin (or recovers from an outage), the plugin retries automatically about every 30 seconds; you can also press **Reindex** to pick it up immediately.
+Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server, a hosted API, or a smaller model is much faster. If the embedding server starts _after_ the plugin (or recovers from an outage), the plugin retries automatically about every 30 seconds; you can also press **Reindex** to pick it up immediately.
 
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 

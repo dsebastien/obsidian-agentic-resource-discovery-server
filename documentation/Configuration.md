@@ -6,21 +6,21 @@ Technical reference for the plugin's settings. The user-facing version is in [`d
 
 `parsePluginSettings(raw): PluginSettings` is the single entry point. It never throws: non-object input yields defaults, and each field has a `.catch(default)` so one corrupt value falls back without discarding valid siblings.
 
-| Field                | Type                    | Default                                         | Notes                                                                              |
-| -------------------- | ----------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `publisher`          | string                  | `"obsidian"`                                    | URN publisher segment.                                                             |
-| `catalogDisplayName` | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                        |
-| `catalogIdentifier`  | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                           |
-| `skillFolders`       | string[]                | `[]`                                            | Absolute or vault-relative folders to scan.                                        |
-| `watchSkillFolders`  | boolean                 | `false`                                         | Opt-in fs watching of skill folders; debounced rescan on `SKILL.md` change.        |
-| `resources`          | ManualResource[]        | `[]`                                            | Manually configured non-skill entries.                                             |
-| `server.port`        | int 1024–65535          | `27182`                                         | Listen port.                                                                       |
-| `server.bindAddress` | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                                      |
-| `server.bearerToken` | string                  | `""` → generated                                | 64 hex chars once generated.                                                       |
-| `server.enableCors`  | boolean                 | `true`                                          | `Access-Control-Allow-Origin: *`.                                                  |
-| `searchBackend.kind` | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `hosted-api`.                                        |
-| `searchBackend.*`    | —                       | —                                               | Embedding server URL/model, or hosted API provider/base URL/model/key.             |
-| `lastScanStats`      | object                  | `{0,0}`                                         | Internal: last scan counts + timestamp.                                            |
+| Field                | Type                    | Default                                         | Notes                                                                       |
+| -------------------- | ----------------------- | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| `publisher`          | string                  | `"obsidian"`                                    | URN publisher segment.                                                      |
+| `catalogDisplayName` | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                 |
+| `catalogIdentifier`  | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                    |
+| `skillFolders`       | string[]                | `[]`                                            | Absolute or vault-relative folders to scan.                                 |
+| `watchSkillFolders`  | boolean                 | `false`                                         | Opt-in fs watching of skill folders; debounced rescan on `SKILL.md` change. |
+| `resources`          | ManualResource[]        | `[]`                                            | Manually configured non-skill entries.                                      |
+| `server.port`        | int 1024–65535          | `27182`                                         | Listen port.                                                                |
+| `server.bindAddress` | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                               |
+| `server.bearerToken` | string                  | `""` → generated                                | 64 hex chars once generated.                                                |
+| `server.enableCors`  | boolean                 | `true`                                          | `Access-Control-Allow-Origin: *`.                                           |
+| `searchBackend.kind` | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `hosted-api`.                                 |
+| `searchBackend.*`    | —                       | —                                               | Embedding server URL/model, or hosted API provider/base URL/model/key.      |
+| `lastScanStats`      | object                  | `{0,0}`                                         | Internal: last scan counts + timestamp.                                     |
 
 `ManualResource`: `{ id, enabled, type, slug, displayName, description?, url?, inlineData?, capabilities[], tags[], representativeQueries[] }` where `type` is one of the MCP/A2A/catalog/registry media types.
 

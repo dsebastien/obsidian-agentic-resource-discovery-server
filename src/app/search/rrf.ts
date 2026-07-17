@@ -27,9 +27,7 @@ export function reciprocalRankFusion(lists: RankedIds[], k = RRF_K): FusedRank[]
             scores.set(id, (scores.get(id) ?? 0) + 1 / (k + rank))
         })
     }
-    return [...scores.entries()]
-        .map(([id, rrf]) => ({ id, rrf }))
-        .sort((a, b) => b.rrf - a.rrf)
+    return [...scores.entries()].map(([id, rrf]) => ({ id, rrf })).sort((a, b) => b.rrf - a.rrf)
 }
 
 /**

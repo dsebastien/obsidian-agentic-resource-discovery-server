@@ -1,4 +1,7 @@
-import { HOSTED_EMBEDDING_PROVIDERS, type SearchBackendConfig } from '../../types/plugin-settings.intf'
+import {
+    HOSTED_EMBEDDING_PROVIDERS,
+    type SearchBackendConfig
+} from '../../types/plugin-settings.intf'
 import type { HttpEmbedderConfig } from './http-embedder'
 
 /**

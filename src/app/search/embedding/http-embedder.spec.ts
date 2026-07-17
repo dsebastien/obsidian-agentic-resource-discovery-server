@@ -23,7 +23,10 @@ describe('HttpEmbedder', () => {
         const seen: { url: string; headers: Record<string, string>; body: string }[] = []
         const embedder = new HttpEmbedder(
             { url: 'http://localhost:11434/v1', model: 'nomic-embed-text', apiKey: 'secret' },
-            fakeClient(() => [3, 4], (req) => seen.push(req))
+            fakeClient(
+                () => [3, 4],
+                (req) => seen.push(req)
+            )
         )
         await embedder.load()
         expect(embedder.isReady()).toBe(true)
@@ -73,7 +76,10 @@ describe('HttpEmbedder', () => {
                 [0, 1],
                 [1, 1]
             ]
-            return { status: 200, json: { data: parsed.input.map((_t, i) => ({ embedding: vecs[i] })) } }
+            return {
+                status: 200,
+                json: { data: parsed.input.map((_t, i) => ({ embedding: vecs[i] })) }
+            }
         }
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         await embedder.load()
@@ -142,7 +148,10 @@ describe('HttpEmbedder', () => {
         const client: EmbeddingHttpClient = async (req) => {
             calls++
             const parsed = JSON.parse(req.body) as { input: string[] }
-            return { status: 200, json: { data: parsed.input.map((_t, index) => ({ index, embedding: [1] })) } }
+            return {
+                status: 200,
+                json: { data: parsed.input.map((_t, index) => ({ index, embedding: [1] })) }
+            }
         }
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         await embedder.load() // one probe call

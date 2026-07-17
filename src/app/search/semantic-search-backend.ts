@@ -104,9 +104,7 @@ export class SemanticSearchBackend implements SearchBackend {
             const [queryVec] = await this.embedder.embed([query])
             this.queryFailures = 0
             if (queryVec) {
-                vectorIds = this.vectors
-                    .query(queryVec, FUSION_CANDIDATES)
-                    .map((hit) => hit.id)
+                vectorIds = this.vectors.query(queryVec, FUSION_CANDIDATES).map((hit) => hit.id)
             }
         } catch {
             // Query embedding failed mid-flight (e.g. the server died after the

@@ -18,7 +18,10 @@ export interface WatchHandle {
 }
 
 /** Returns a handle, or `null` when the folder can't be watched (unsupported FS, missing dir). */
-export type WatchFn = (dir: string, onEvent: (filename: string | null) => void) => WatchHandle | null
+export type WatchFn = (
+    dir: string,
+    onEvent: (filename: string | null) => void
+) => WatchHandle | null
 
 export interface WatcherTimers {
     set: (callback: () => void, ms: number) => unknown

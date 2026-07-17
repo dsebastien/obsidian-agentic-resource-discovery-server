@@ -120,12 +120,12 @@ export class ArdServerSettingTab extends PluginSettingTab {
             .setName('Catalog name')
             .setDesc('Human-readable name for this catalog, shown in the served ai-catalog.json.')
             .addText((text) =>
-            text.setValue(this.plugin.settings.catalogDisplayName).onChange(async (value) => {
-                await this.plugin.updateSettings((draft) => {
-                    draft.catalogDisplayName = value
+                text.setValue(this.plugin.settings.catalogDisplayName).onChange(async (value) => {
+                    await this.plugin.updateSettings((draft) => {
+                        draft.catalogDisplayName = value
+                    })
                 })
-            })
-        )
+            )
     }
 
     // ----- Section 2: Skill folders -----
@@ -346,7 +346,8 @@ export class ArdServerSettingTab extends PluginSettingTab {
                         .setValue(this.plugin.settings.searchBackend.embeddingModel)
                         .onChange(async (value) => {
                             await this.plugin.updateSettings((draft) => {
-                                draft.searchBackend.embeddingModel = value.trim() || 'nomic-embed-text'
+                                draft.searchBackend.embeddingModel =
+                                    value.trim() || 'nomic-embed-text'
                             })
                         })
                 )
@@ -356,7 +357,9 @@ export class ArdServerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Reindex')
-            .setDesc('Rebuild the search index over the current catalog without rescanning folders.')
+            .setDesc(
+                'Rebuild the search index over the current catalog without rescanning folders.'
+            )
             .addButton((button) =>
                 button
                     .setButtonText('Reindex')

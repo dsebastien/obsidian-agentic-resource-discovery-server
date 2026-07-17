@@ -91,7 +91,12 @@ async function handleRequest(
     } catch (error) {
         if (error instanceof PayloadTooLargeError) {
             res.writeHead(413, { 'content-type': 'application/json; charset=utf-8' })
-            res.end(JSON.stringify({ errorCode: 'PAYLOAD_TOO_LARGE', message: 'Request body too large.' }))
+            res.end(
+                JSON.stringify({
+                    errorCode: 'PAYLOAD_TOO_LARGE',
+                    message: 'Request body too large.'
+                })
+            )
             return
         }
         res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })

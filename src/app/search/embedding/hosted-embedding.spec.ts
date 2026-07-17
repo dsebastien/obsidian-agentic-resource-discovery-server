@@ -43,7 +43,9 @@ describe('resolveHostedEmbedderConfig', () => {
     })
 
     it('defaults to openai when no provider is set', () => {
-        const r = resolveHostedEmbedderConfig(SearchBackendConfigSchema.parse({ kind: 'hosted-api' }))
+        const r = resolveHostedEmbedderConfig(
+            SearchBackendConfigSchema.parse({ kind: 'hosted-api' })
+        )
         expect(r.url).toBe('https://api.openai.com/v1')
     })
 })

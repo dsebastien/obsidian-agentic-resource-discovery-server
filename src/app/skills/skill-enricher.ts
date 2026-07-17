@@ -173,7 +173,8 @@ function asStringArray(value: unknown): string[] {
 function isInternal(fm: SkillFrontmatter): boolean {
     // Frontmatter is untrusted: a quoted YAML value yields a string, not a bool.
     // Treat both the real boolean and its string form as the same signal.
-    const notInvocable = fm['user-invocable'] === false || asString(fm['user-invocable']) === 'false'
+    const notInvocable =
+        fm['user-invocable'] === false || asString(fm['user-invocable']) === 'false'
     const noModelInvoke =
         fm['disable-model-invocation'] === true ||
         asString(fm['disable-model-invocation']) === 'true'
