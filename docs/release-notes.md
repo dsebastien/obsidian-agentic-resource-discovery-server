@@ -1,9 +1,10 @@
----
-title: Release notes
-nav_order: 99
----
+# Release Notes
 
-# Release notes
+## 0.0.2 (2026-07-17)
+
+### Bug Fixes
+
+- **docs:** correct Pages config and complete docs site
 
 ## 0.0.1 (2026-06-24)
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.2](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.0.1...0.0.2) (2026-07-17)
+
+### Bug Fixes
+
+* **docs:** correct Pages config and complete docs site ([bad4826](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/bad482618645fd3d2c4da916f36ff01ba15f01aa))
+
 ## 0.0.1 (2026-06-24)
 
 ### Features
@@ -23,3 +29,4 @@ All notable changes to this project will be documented in this file.
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
