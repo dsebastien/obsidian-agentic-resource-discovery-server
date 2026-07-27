@@ -20,7 +20,9 @@ import { log } from '../utils/log'
  */
 export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
-    override settings: PluginSettings = DEFAULT_SETTINGS
+    // No `override`: `Plugin.settings` only exists in API 1.13+ typings and the
+    // plugin supports older public releases.
+    settings: PluginSettings = DEFAULT_SETTINGS
 
     /** How often to retry a failed embedding build (e.g. server started late). */
     private static readonly EMBEDDING_RETRY_INTERVAL_MS = 30_000
