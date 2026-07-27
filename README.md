@@ -55,6 +55,7 @@ To use it as an MCP server, point your MCP client at `http://127.0.0.1:27182/mcp
 - **[User guide](docs/usage.md)** — usage, [configuration](docs/configuration.md), [tips](docs/tips.md).
 - **[Technical docs](documentation/)** — [architecture](documentation/Architecture.md), [domain model](<documentation/Domain Model.md>), and [business rules](<documentation/Business Rules.md>).
 - **[Contributing](CONTRIBUTING.md)** · **[Development](DEVELOPMENT.md)**
+- **What's new after updates.** After a plugin update, a one-time dialog shows the release notes you just received (including skipped versions) with ways to support development. Never shown on fresh installs or regular restarts.
 
 ## Privacy & security
 

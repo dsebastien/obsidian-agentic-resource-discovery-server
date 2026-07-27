@@ -10,6 +10,7 @@ import { scanSkillFolders } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
+import { registerWhatsNewDialog } from './whats-new'
 
 /**
  * Agentic Resource Discovery Server plugin.
@@ -48,6 +49,8 @@ export class ArdServerPlugin extends Plugin {
     })
 
     override async onload(): Promise<void> {
+        // Must run before anything can call saveData (fresh-install detection)
+        registerWhatsNewDialog(this)
         log('Initializing', 'debug')
         await this.loadSettings()
         await this.ensureBearerToken()
