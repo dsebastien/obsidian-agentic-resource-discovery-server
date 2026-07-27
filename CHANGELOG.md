@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.0.2...0.1.0) (2026-07-27)
+
+### Features
+
+* **plugin:** show a what's new dialog once after plugin updates ([0d3b2d4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/0d3b2d4e5ce97512fd5dfdf0553f96c18023c823))
+
+### Bug Fixes
+
+* **plugin:** compile against public Obsidian typings (1.12.0) ([c46e132](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/c46e13294a44e6ce9b5032b91bacd3ef04981d9e))
+
 ## [0.0.2](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.0.1...0.0.2) (2026-07-17)
 
 ### Bug Fixes
@@ -29,4 +39,5 @@ All notable changes to this project will be documented in this file.
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 

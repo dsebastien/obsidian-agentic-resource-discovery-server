@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.1.0 (2026-07-27)
+
+### Features
+
+- **plugin:** show a what's new dialog once after plugin updates
+
+### Bug Fixes
+
+- **plugin:** compile against public Obsidian typings (1.12.0)
+
 ## 0.0.2 (2026-07-17)
 
 ### Bug Fixes
