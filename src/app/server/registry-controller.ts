@@ -1,5 +1,6 @@
 import { CatalogService } from '../catalog/catalog-service'
 import { manualResourcesToEntries } from '../catalog/resource-mapper'
+import type { EmbeddingCache } from '../search/embedding/embedding-cache'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import { createSearchBackend } from '../search/search-backend-factory'
 import type { SearchBackend } from '../search/search-backend'
@@ -18,6 +19,12 @@ import { createRouter, type RouterDeps } from './router'
  * can swap the catalog and reindex in place while the server keeps serving.
  */
 export class RegistryController {
+    /**
+     * @param embeddingCache reused across restarts so switching settings (or
+     * reloading the plugin) doesn't re-embed unchanged skills.
+     */
+    constructor(private readonly embeddingCache?: EmbeddingCache) {}
+
     private search: SearchBackend = new LexicalSearchBackend()
     private server: ArdHttpServer | null = null
     private deps: RouterDeps | null = null
@@ -31,7 +38,7 @@ export class RegistryController {
     async start(settings: PluginSettings): Promise<void> {
         await this.stop()
 
-        this.search = createSearchBackend(settings.searchBackend)
+        this.search = createSearchBackend(settings.searchBackend, this.embeddingCache)
         const baseUrl = `http://127.0.0.1:${settings.server.port}`
         const catalog = await this.buildCatalog(settings)
         const deps: RouterDeps = {
@@ -116,6 +123,20 @@ export class RegistryController {
      */
     get embeddingsNeedRetry(): boolean {
         return this.search.embeddingState === 'failed'
+    }
+
+    /**
+     * Lifecycle of the backend's dense-vector index, surfaced for the settings
+     * status panel. `null` when the active backend has no embeddings at all
+     * (the lexical default).
+     */
+    get embeddingState(): NonNullable<SearchBackend['embeddingState']> | null {
+        return this.search.embeddingState ?? null
+    }
+
+    /** Identifier of the active search backend (e.g. `lexical`, `semantic`). */
+    get searchBackendName(): string {
+        return this.search.name
     }
 
     private async buildCatalog(settings: PluginSettings): Promise<CatalogService> {

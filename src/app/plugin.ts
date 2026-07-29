@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin } from 'obsidian'
+import { FileSystemAdapter, Notice, Plugin, normalizePath } from 'obsidian'
 import { isAbsolute, join } from 'node:path'
 import { produce } from 'immer'
 import type { Draft } from 'immer'
@@ -6,18 +6,25 @@ import { DEFAULT_SETTINGS, parsePluginSettings } from './types/plugin-settings.i
 import type { PluginSettings } from './types/plugin-settings.intf'
 import { ArdServerSettingTab } from './settings/settings-tab'
 import { RegistryController } from './server/registry-controller'
-import { scanSkillFolders } from './skills/skill-scanner'
+import { RegistryCoordinator } from './server/registry-coordinator'
+import { PersistentEmbeddingCache } from './search/embedding/persistent-embedding-cache'
+import { scanSkillFolders, type ScanResult } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
 import { registerWhatsNewDialog } from './whats-new'
 
+/** Side file (next to the plugin) holding cached embedding vectors. */
+const EMBEDDING_CACHE_FILE = 'embedding-cache.json'
+
 /**
  * Agentic Resource Discovery Server plugin.
  *
- * Turns the vault into a local-first ARD publisher + Agent Registry. Owns the
- * settings lifecycle and the {@link RegistryController} (catalog + search + HTTP
- * server), plus skill scanning and the MCP endpoint.
+ * Turns the vault into a local-first ARD publisher + Agent Registry. This class
+ * is deliberately thin: it owns the settings lifecycle and translates between
+ * Obsidian (vault paths, notices, timers, the settings tab) and the
+ * {@link RegistryCoordinator}, which holds all lifecycle/orchestration logic and
+ * is unit-tested without Obsidian.
  */
 export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
@@ -28,17 +35,12 @@ export class ArdServerPlugin extends Plugin {
     /** How often to retry a failed embedding build (e.g. server started late). */
     private static readonly EMBEDDING_RETRY_INTERVAL_MS = 30_000
 
-    private readonly registry = new RegistryController()
+    private readonly embeddingCache = new PersistentEmbeddingCache({
+        read: () => this.readEmbeddingCache(),
+        write: (data) => this.writeEmbeddingCache(data)
+    })
 
-    /**
-     * Serialises every registry-mutating operation (start, rescan, reindex,
-     * settings reconcile) so the background skill scan and a concurrent settings
-     * change can't race — e.g. both calling start() on the same port at once.
-     */
-    private opChain: Promise<void> = Promise.resolve()
-
-    /** Set in onunload so no in-flight/queued op resurrects the server after stop. */
-    private disposed = false
+    readonly registry = new RegistryController(this.embeddingCache)
 
     /** Kept so a background rescan can refresh the open settings tab's scan stats. */
     private settingTab: ArdServerSettingTab | null = null
@@ -48,12 +50,32 @@ export class ArdServerPlugin extends Plugin {
         clear: (handle) => window.clearTimeout(handle as number)
     })
 
+    private readonly coordinator = new RegistryCoordinator({
+        registry: this.registry,
+        watcher: this.watcher,
+        settings: () => this.settings,
+        skillFolders: () => this.resolveSkillFolders(),
+        scan: (folders, ctx, cache) =>
+            scanSkillFolders(folders, ctx, {
+                cache,
+                // Yield to the UI between chunks so a big scan never freezes it.
+                scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0))
+            }),
+        onScanned: (result) => this.recordScanStats(result),
+        notify: (message) => {
+            new Notice(message)
+        }
+    })
+
     override async onload(): Promise<void> {
         // Must run before anything can call saveData (fresh-install detection)
         registerWhatsNewDialog(this)
         log('Initializing', 'debug')
         await this.loadSettings()
         await this.ensureBearerToken()
+        // Warm embeddings from the previous session so a semantic backend is
+        // ready immediately instead of re-embedding the whole catalog.
+        await this.embeddingCache.load()
 
         this.settingTab = new ArdServerSettingTab(this.app, this)
         this.addSettingTab(this.settingTab)
@@ -64,50 +86,22 @@ export class ArdServerPlugin extends Plugin {
         // in progress. registerInterval ties the timer to the plugin lifecycle.
         this.registerInterval(
             window.setInterval(
-                () => this.retryEmbeddingsIfNeeded(),
+                () => this.coordinator.retryEmbeddingsIfNeeded(),
                 ArdServerPlugin.EMBEDDING_RETRY_INTERVAL_MS
             )
         )
 
-        await this.serialize(() => this.startRegistry())
+        await this.coordinator.start()
         // Scan skills after the workspace settles so we don't block load or
         // drown in vault events. The scan itself yields between chunks.
         this.app.workspace.onLayoutReady(() => {
             void this.rescanSkills()
-            this.reconcileWatcher()
+            this.coordinator.reconcileWatcher()
         })
-    }
-
-    /** Run a registry-mutating operation after any in-flight one completes. */
-    private serialize(op: () => Promise<void>): Promise<void> {
-        // Skip if the plugin has unloaded by the time this op is dequeued.
-        const guarded = (): Promise<void> => (this.disposed ? Promise.resolve() : op())
-        const next = this.opChain.then(guarded, guarded)
-        this.opChain = next.then(
-            () => undefined,
-            () => undefined
-        )
-        return next
-    }
-
-    /**
-     * Re-attempt embeddings when the backend's last build failed (e.g. the local
-     * embedding server has since started). No-op while it's building, ready, or
-     * when the backend has no embeddings — so a slow build is never interrupted.
-     */
-    private retryEmbeddingsIfNeeded(): void {
-        if (this.registry.embeddingsNeedRetry) {
-            log('Retrying failed embedding build', 'debug')
-            void this.reindex()
-        }
     }
 
     override onunload(): void {
-        this.disposed = true
-        this.watcher.stop()
-        this.registry.stop().catch((error: unknown) => {
-            log('Registry stop failed on unload', 'error', error)
-        })
+        this.coordinator.dispose()
     }
 
     /** Load + validate persisted settings, always yielding a complete object. */
@@ -132,132 +126,39 @@ export class ArdServerPlugin extends Plugin {
         const previous = this.settings
         this.settings = produce(this.settings, updater)
         await this.saveSettings()
-        await this.serialize(() => this.syncRegistry(previous, this.settings))
+        await this.coordinator.applySettings(previous, this.settings)
     }
 
     async saveSettings(): Promise<void> {
         await this.saveData(this.settings)
     }
 
-    /**
-     * Scan the configured skill folders and feed the results into the catalog.
-     * Non-blocking: yields to the UI between chunks via window.setTimeout.
-     */
+    /** Scan the configured skill folders and feed the results into the catalog. */
     async rescanSkills(): Promise<void> {
-        return this.serialize(() => this.doRescanSkills())
-    }
-
-    private async doRescanSkills(): Promise<void> {
-        const folders = this.resolveSkillFolders()
-        if (folders.length === 0) {
-            return
-        }
-        const port = this.registry.port ?? this.settings.server.port
-        try {
-            const result = await scanSkillFolders(
-                folders,
-                { publisher: this.settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
-                { scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0)) }
-            )
-            if (this.disposed) {
-                return // unloaded mid-scan; don't resurrect the registry
-            }
-            await this.registry.setSkillEntries(this.settings, result.entries, result.folders)
-            this.settings = produce(this.settings, (draft) => {
-                draft.lastScanStats = {
-                    skillCount: result.skillCount,
-                    errorCount: result.errorCount,
-                    lastScanAt: new Date().toISOString()
-                }
-            })
-            await this.saveSettings()
-            // Refresh the settings tab so its scan stats update even when the
-            // rescan was triggered in the background (watcher), not by the button.
-            this.settingTab?.display()
-            const dupes = result.duplicateCount > 0 ? `, ${result.duplicateCount} duplicates` : ''
-            log(
-                `Scanned ${result.skillCount} skills (${result.errorCount} errors${dupes})`,
-                'debug'
-            )
-        } catch (error) {
-            log('Skill scan failed', 'error', error)
-        }
+        return this.coordinator.rescanSkills()
     }
 
     /**
      * Rebuild the search index over the current catalog without rescanning the
-     * vault or restarting the server. Useful after switching backend or to
-     * refresh a stale index.
+     * vault or restarting the server.
      */
     async reindex(): Promise<void> {
-        return this.serialize(async () => {
-            try {
-                await this.registry.reindex()
-                log('Search index rebuilt', 'debug')
-            } catch (error) {
-                log('Reindex failed', 'error', error)
+        return this.coordinator.reindex()
+    }
+
+    /** Persist the scan stats and refresh an open settings tab. */
+    private async recordScanStats(result: ScanResult): Promise<void> {
+        this.settings = produce(this.settings, (draft) => {
+            draft.lastScanStats = {
+                skillCount: result.skillCount,
+                errorCount: result.errorCount,
+                lastScanAt: new Date().toISOString()
             }
         })
-    }
-
-    private async startRegistry(): Promise<void> {
-        try {
-            await this.registry.start(this.settings)
-            log('Registry server started', 'debug')
-        } catch (error) {
-            log('Failed to start registry server', 'error', error)
-            new Notice(
-                `ARD: could not start the registry server on port ${this.settings.server.port}. ` +
-                    `It may already be in use — change the port in settings.`
-            )
-        }
-    }
-
-    /** Reconcile the running server with a settings change. */
-    private async syncRegistry(previous: PluginSettings, next: PluginSettings): Promise<void> {
-        try {
-            // The search backend is built once at start, capturing its config
-            // (e.g. the embedding server URL/model), so any backend-config change
-            // must recreate it — i.e. restart the registry, not just rebuild.
-            const prevBackend = previous.searchBackend
-            const nextBackend = next.searchBackend
-            const backendChanged =
-                prevBackend.kind !== nextBackend.kind ||
-                prevBackend.embeddingServerUrl !== nextBackend.embeddingServerUrl ||
-                prevBackend.embeddingModel !== nextBackend.embeddingModel ||
-                prevBackend.apiProvider !== nextBackend.apiProvider ||
-                prevBackend.apiBaseUrl !== nextBackend.apiBaseUrl ||
-                prevBackend.apiKey !== nextBackend.apiKey ||
-                prevBackend.apiModel !== nextBackend.apiModel
-            const serverChanged =
-                previous.server.port !== next.server.port ||
-                previous.server.bindAddress !== next.server.bindAddress ||
-                backendChanged
-            if (!this.registry.isRunning || serverChanged) {
-                await this.startRegistry()
-            } else {
-                await this.registry.rebuild(next)
-            }
-            this.reconcileWatcher()
-        } catch (error) {
-            log('Failed to reconcile registry server', 'error', error)
-        }
-    }
-
-    /** Start or stop the opt-in skill-folder watcher to match current settings. */
-    private reconcileWatcher(): void {
-        const folders = this.resolveSkillFolders()
-        if (this.settings.watchSkillFolders && folders.length > 0) {
-            const failed = this.watcher.start(folders, () => void this.rescanSkills())
-            if (failed.length > 0) {
-                new Notice(
-                    `ARD: could not watch ${failed.length} skill folder(s) for changes. ` +
-                        `Use "Rescan skills now" to pick up edits manually.`
-                )
-            }
-        } else {
-            this.watcher.stop()
-        }
+        await this.saveSettings()
+        // Refresh the settings tab so its scan stats update even when the
+        // rescan was triggered in the background (watcher), not by the button.
+        this.settingTab?.display()
     }
 
     /**
@@ -276,5 +177,26 @@ export class ArdServerPlugin extends Plugin {
     private vaultBasePath(): string {
         const adapter = this.app.vault.adapter
         return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : ''
+    }
+
+    /** Vault-relative path of the embedding cache side file, if the plugin dir is known. */
+    private embeddingCachePath(): string | null {
+        const dir = this.manifest.dir
+        return dir ? normalizePath(`${dir}/${EMBEDDING_CACHE_FILE}`) : null
+    }
+
+    private async readEmbeddingCache(): Promise<string | null> {
+        const path = this.embeddingCachePath()
+        if (!path || !(await this.app.vault.adapter.exists(path))) {
+            return null
+        }
+        return this.app.vault.adapter.read(path)
+    }
+
+    private async writeEmbeddingCache(data: string): Promise<void> {
+        const path = this.embeddingCachePath()
+        if (path) {
+            await this.app.vault.adapter.write(path, data)
+        }
     }
 }
