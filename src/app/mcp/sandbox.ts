@@ -1,5 +1,7 @@
 import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule } from 'quickjs-emscripten-core'
 import variant from '@jitl/quickjs-singlefile-cjs-release-sync'
+import { LEXICAL_CONFIG_JSON, REGISTRY_SHIM } from './registry-shim'
+import { miniSearchUmdSource } from './minisearch-source' with { type: 'macro' }
 
 /**
  * Code Mode sandbox.
@@ -41,39 +43,11 @@ function getModule(): Promise<QuickJSWASMModule> {
     return modulePromise
 }
 
-/** The `registry` shim injected into the sandbox (runs against `__CATALOG__`). */
-const REGISTRY_SHIM = `
-globalThis.registry = {
-  listAll(filter) {
-    let xs = globalThis.__CATALOG__;
-    if (filter && filter.type) xs = xs.filter(e => e.type === filter.type);
-    if (filter && filter.tag) xs = xs.filter(e => (e.tags || []).includes(filter.tag));
-    return xs;
-  },
-  get(identifier) {
-    return globalThis.__CATALOG__.find(e => e.identifier === identifier) || null;
-  },
-  search(query, opts) {
-    const limit = (opts && opts.limit) || 10;
-    const terms = String(query || '').toLowerCase().split(/\\s+/).filter(Boolean);
-    if (!terms.length) return [];
-    const scored = [];
-    for (const e of globalThis.__CATALOG__) {
-      const hay = [
-        e.displayName, e.description,
-        (e.tags || []).join(' '),
-        (e.capabilities || []).join(' '),
-        (e.representativeQueries || []).join(' ')
-      ].join(' ').toLowerCase();
-      let score = 0;
-      for (const t of terms) if (hay.indexOf(t) !== -1) score++;
-      if (score > 0) scored.push({ identifier: e.identifier, displayName: e.displayName, type: e.type, score: score });
-    }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit);
-  }
-};
-`
+/**
+ * MiniSearch's own source, inlined at bundle time by the macro. Injected as a
+ * string and only evaluated when in-sandbox code actually searches.
+ */
+const MINISEARCH_SOURCE: string = miniSearchUmdSource()
 
 export async function runSandbox(
     userCode: string,
@@ -98,6 +72,11 @@ export async function runSandbox(
     const context = runtime.newContext()
     try {
         evalOrThrow(context, `globalThis.__CATALOG__ = ${JSON.stringify(input.catalog)};`)
+        evalOrThrow(context, `globalThis.__LEXICAL_CONFIG__ = ${LEXICAL_CONFIG_JSON};`)
+        evalOrThrow(
+            context,
+            `globalThis.__MINISEARCH_SRC__ = ${JSON.stringify(MINISEARCH_SOURCE)};`
+        )
         evalOrThrow(context, REGISTRY_SHIM)
 
         const wrapped = `(async () => {

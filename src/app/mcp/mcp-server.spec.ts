@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { handleMcpMessage, type McpDeps } from './mcp-server'
+import { handleMcpMessage, MCP_TOOL_NAMES, type McpDeps } from './mcp-server'
 import { CatalogService } from '../catalog/catalog-service'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
@@ -63,6 +63,8 @@ describe('handleMcpMessage', () => {
         )
         const names = res.result.tools.map((t: { name: string }) => t.name)
         expect(names).toEqual(expect.arrayContaining(['search', 'get_skill', 'execute']))
+        // The settings status panel advertises this list — keep them in sync.
+        expect(names).toEqual([...MCP_TOOL_NAMES])
     })
 
     it('runs the search tool', async () => {

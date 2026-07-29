@@ -42,6 +42,9 @@ interface JsonRpcResponse {
     error?: { code: number; message: string }
 }
 
+/** Tools this endpoint exposes, in the order they are advertised. */
+export const MCP_TOOL_NAMES = ['search', 'get_skill', 'execute'] as const
+
 const TOOLS = [
     {
         name: 'search',
@@ -82,7 +85,8 @@ const TOOLS = [
         name: 'execute',
         description:
             'Write JavaScript that calls the registry to discover/filter/aggregate resources in one ' +
-            'shot. A `registry` global is pre-injected: registry.search(query, opts?), ' +
+            'shot. A `registry` global is pre-injected: registry.search(query, opts?) — same ranking ' +
+            'as the search tool, opts = { limit, filter: { type, tags, capabilities } } — ' +
             'registry.get(identifier), registry.listAll(filter?). Return a value; it is JSON-serialized ' +
             'back. Sandboxed: no network, no filesystem, time- and memory-limited. Write plain JS.',
         inputSchema: {

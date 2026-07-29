@@ -4,7 +4,7 @@ import type { SearchBackend, SearchRequest, SearchResult } from './search-backen
 import { matchesFilter, terminalSegment } from './search-utils'
 
 /** Flattened document indexed by MiniSearch (array fields joined to strings). */
-interface IndexDoc {
+export interface IndexDoc {
     id: string
     displayName: string
     name: string
@@ -33,6 +33,37 @@ const FIELD_BOOSTS: Record<string, number> = {
 }
 
 /**
+ * The MiniSearch options that define lexical ranking here.
+ *
+ * Exported (and JSON-serialisable on purpose) so the Code Mode sandbox can build
+ * an identical index for its `registry.search`, keeping in-sandbox ranking
+ * identical to `POST /search`.
+ */
+export const LEXICAL_INDEX_CONFIG = {
+    idField: 'id',
+    fields: [...SEARCH_FIELDS],
+    searchOptions: { boost: FIELD_BOOSTS, fuzzy: 0.2, prefix: true }
+} as const
+
+/** Map a raw BM25 score onto 0–100, with the best match capped at 85. */
+export function normalizeScore(score: number, topScore: number): number {
+    return Math.min(100, Math.max(1, Math.round((score / topScore) * 85)))
+}
+
+/** Flatten an entry into the document shape the lexical index expects. */
+export function toIndexDoc(entry: CatalogEntry): IndexDoc {
+    return {
+        id: entry.identifier,
+        displayName: entry.displayName,
+        name: terminalSegment(entry.identifier),
+        description: entry.description ?? '',
+        tags: (entry.tags ?? []).join(' '),
+        capabilities: (entry.capabilities ?? []).join(' '),
+        representativeQueries: (entry.representativeQueries ?? []).join(' ')
+    }
+}
+
+/**
  * Built-in lexical (BM25) search backend powered by MiniSearch.
  *
  * Zero model download, fully in-process, instant. Good enough as the default
@@ -48,11 +79,7 @@ export class LexicalSearchBackend implements SearchBackend {
     private ready = false
 
     private static createIndex(): MiniSearch<IndexDoc> {
-        return new MiniSearch<IndexDoc>({
-            idField: 'id',
-            fields: [...SEARCH_FIELDS],
-            searchOptions: { boost: FIELD_BOOSTS, fuzzy: 0.2, prefix: true }
-        })
+        return new MiniSearch<IndexDoc>({ ...LEXICAL_INDEX_CONFIG, fields: [...SEARCH_FIELDS] })
     }
 
     async index(entries: CatalogEntry[]): Promise<void> {
@@ -89,22 +116,5 @@ export class LexicalSearchBackend implements SearchBackend {
             }
         }
         return results
-    }
-}
-
-/** Map a raw BM25 score onto 0–100, with the best match capped at 85. */
-function normalizeScore(score: number, topScore: number): number {
-    return Math.min(100, Math.max(1, Math.round((score / topScore) * 85)))
-}
-
-function toIndexDoc(entry: CatalogEntry): IndexDoc {
-    return {
-        id: entry.identifier,
-        displayName: entry.displayName,
-        name: terminalSegment(entry.identifier),
-        description: entry.description ?? '',
-        tags: (entry.tags ?? []).join(' '),
-        capabilities: (entry.capabilities ?? []).join(' '),
-        representativeQueries: (entry.representativeQueries ?? []).join(' ')
     }
 }
