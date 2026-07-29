@@ -15,6 +15,7 @@ const ENTRIES: CatalogEntry[] = [
         url: `${BASE_URL}/skills/git-commit-helper/SKILL.md`,
         description: 'Write a conventional commit message and commit staged changes.',
         capabilities: ['git.commit.write'],
+        tags: ['git', 'kind:writer'],
         representativeQueries: ['commit my changes']
     },
     {
@@ -22,14 +23,16 @@ const ENTRIES: CatalogEntry[] = [
         displayName: 'Note Analyzer',
         type: ArdMediaType.AiSkill,
         url: `${BASE_URL}/skills/note-analyzer/SKILL.md`,
-        description: 'Analyze a markdown note.'
+        description: 'Analyze a markdown note.',
+        tags: ['notes', 'kind:analyzer']
     },
     {
         identifier: 'urn:air:obsidian:mcp:weather',
         displayName: 'Weather MCP',
         type: ArdMediaType.McpServerCard,
         url: 'http://localhost:9000/card.json',
-        description: 'Weather forecasts.'
+        description: 'Weather forecasts.',
+        tags: ['weather']
     }
 ]
 
@@ -178,10 +181,92 @@ describe('registry router', () => {
         expect(JSON.parse(res.body as string).errorCode).toBeDefined()
     })
 
-    it('returns 501 for the optional explore endpoint', async () => {
+    it('facets the whole catalog on POST /explore', async () => {
         const res = await handle(authed({ method: 'POST', path: '/explore', body: '{}' }))
-        expect(res.status).toBe(501)
+        expect(res.status).toBe(200)
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(3)
+        expect(body.facets.type).toEqual([
+            { value: 'application/ai-skill', count: 2 },
+            { value: 'application/mcp-server-card+json', count: 1 }
+        ])
+        // Ties are broken alphabetically so the response is deterministic.
+        expect(body.facets.tags).toEqual([
+            { value: 'git', count: 1 },
+            { value: 'kind:analyzer', count: 1 },
+            { value: 'kind:writer', count: 1 },
+            { value: 'notes', count: 1 },
+            { value: 'weather', count: 1 }
+        ])
+        expect(body.facets.capabilities).toEqual([{ value: 'git.commit.write', count: 1 }])
+    })
+
+    it('narrows POST /explore facets with a filter', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/explore',
+                body: JSON.stringify({ query: { filter: { type: 'application/ai-skill' } } })
+            })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(2)
+        expect(body.facets.type).toEqual([{ value: 'application/ai-skill', count: 2 }])
+        expect(body.facets.tags.map((f: { value: string }) => f.value)).not.toContain('weather')
+    })
+
+    it('narrows POST /explore facets with a query text', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/explore',
+                body: JSON.stringify({ query: { text: 'commit staged changes' } })
+            })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBeGreaterThan(0)
+        expect(body.facets.capabilities).toEqual([{ value: 'git.commit.write', count: 1 }])
+    })
+
+    it('returns only the requested POST /explore facets', async () => {
+        const res = await handle(
+            authed({ method: 'POST', path: '/explore', body: JSON.stringify({ facets: ['type'] }) })
+        )
+        const body = JSON.parse(res.body as string) as { facets: Record<string, unknown> }
+        expect(Object.keys(body.facets)).toEqual(['type'])
+    })
+
+    it('rejects a malformed POST /explore body with 400', async () => {
+        const res = await handle(
+            authed({ method: 'POST', path: '/explore', body: '{"facets":[123]}' })
+        )
+        expect(res.status).toBe(400)
         expect(JSON.parse(res.body as string).errorCode).toBeDefined()
+    })
+
+    it('requires auth for POST /explore', async () => {
+        const res = await handle(req({ method: 'POST', path: '/explore', body: '{}' }))
+        expect(res.status).toBe(401)
+    })
+
+    it('facets an empty catalog into empty lists', async () => {
+        const catalog = new CatalogService({ displayName: 'Empty', identifier: 'obsidian' })
+        catalog.replaceEntries([])
+        const search = new LexicalSearchBackend()
+        await search.index([])
+        const empty = createRouter({
+            catalog,
+            search,
+            skillFiles: fakeSkillFiles,
+            bearerToken: TOKEN,
+            baseUrl: BASE_URL,
+            enableCors: true
+        })
+        const res = await empty(authed({ method: 'POST', path: '/explore', body: '{}' }))
+        expect(res.status).toBe(200)
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(0)
+        expect(body.facets).toEqual({ type: [], tags: [], capabilities: [] })
     })
 
     it('lists entries deterministically via GET /agents', async () => {
@@ -190,6 +275,91 @@ describe('registry router', () => {
         const body = JSON.parse(res.body as string)
         expect(body.total).toBe(3)
         expect(body.items).toHaveLength(3)
+    })
+
+    it('filters GET /agents by type', async () => {
+        const res = await handle(
+            authed({
+                method: 'GET',
+                path: '/agents',
+                query: new URLSearchParams({ type: 'application/mcp-server-card+json' })
+            })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(1)
+        expect(body.items[0].identifier).toBe('urn:air:obsidian:mcp:weather')
+    })
+
+    it('filters GET /agents by tags (any-match)', async () => {
+        const res = await handle(
+            authed({ method: 'GET', path: '/agents', query: new URLSearchParams({ tags: 'git' }) })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(1)
+        expect(body.items[0].identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
+    })
+
+    it('filters GET /agents by capabilities', async () => {
+        const res = await handle(
+            authed({
+                method: 'GET',
+                path: '/agents',
+                query: new URLSearchParams({ capabilities: 'git.commit.write' })
+            })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(1)
+        expect(body.items[0].identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
+    })
+
+    it('accepts comma-separated and repeated filter values on GET /agents', async () => {
+        const comma = await handle(
+            authed({
+                method: 'GET',
+                path: '/agents',
+                query: new URLSearchParams({ tags: 'git,notes' })
+            })
+        )
+        expect(JSON.parse(comma.body as string).total).toBe(2)
+
+        const repeated = new URLSearchParams()
+        repeated.append('tags', 'git')
+        repeated.append('tags', 'notes')
+        const res = await handle(authed({ method: 'GET', path: '/agents', query: repeated }))
+        expect(JSON.parse(res.body as string).total).toBe(2)
+    })
+
+    it('combines GET /agents filters with pagination', async () => {
+        const query = new URLSearchParams({
+            type: 'application/ai-skill',
+            tags: 'git,notes',
+            pageSize: '1'
+        })
+        const first = await handle(authed({ method: 'GET', path: '/agents', query }))
+        const firstBody = JSON.parse(first.body as string)
+        expect(firstBody.total).toBe(2)
+        expect(firstBody.items).toHaveLength(1)
+        expect(firstBody.pageToken).toBeDefined()
+
+        query.set('pageToken', String(firstBody.pageToken))
+        const second = await handle(authed({ method: 'GET', path: '/agents', query }))
+        const secondBody = JSON.parse(second.body as string)
+        expect(secondBody.total).toBe(2)
+        expect(secondBody.items[0].identifier).not.toBe(firstBody.items[0].identifier)
+        expect(secondBody.pageToken).toBeUndefined()
+    })
+
+    it('returns an empty page when no entry matches the GET /agents filter', async () => {
+        const res = await handle(
+            authed({
+                method: 'GET',
+                path: '/agents',
+                query: new URLSearchParams({ tags: 'nothing-matches' })
+            })
+        )
+        const body = JSON.parse(res.body as string)
+        expect(body.total).toBe(0)
+        expect(body.items).toEqual([])
     })
 
     it('paginates GET /agents with a page token', async () => {

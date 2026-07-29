@@ -2,9 +2,10 @@ import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import type { CatalogService } from '../catalog/catalog-service'
 import { handleMcpMessage } from '../mcp/mcp-server'
+import { matchesFilter } from '../search/search-utils'
 import type { SearchBackend, SearchFilter } from '../search/search-backend'
 import type { SkillFileService } from '../skills/skill-file-server'
-import type { ArdErrorResponse, SearchResultItem } from '../types/ard.types'
+import type { ArdErrorResponse, CatalogEntry, SearchResultItem } from '../types/ard.types'
 
 /**
  * The registry router: a pure function from a transport-agnostic request to a
@@ -54,8 +55,26 @@ const SearchBodySchema = z.object({
     pageToken: z.string().optional()
 })
 
+/** Facets `/explore` can aggregate; also the default set when none is requested. */
+const FACET_NAMES = ['type', 'tags', 'capabilities'] as const
+type FacetName = (typeof FACET_NAMES)[number]
+
+const ExploreBodySchema = z.object({
+    query: z
+        .object({
+            text: z.string().optional(),
+            filter: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional()
+        })
+        .optional(),
+    /** Which facets to aggregate; defaults to all of them. */
+    facets: z.array(z.enum(FACET_NAMES)).nonempty().optional(),
+    /** Max values returned per facet. */
+    limit: z.number().int().positive().max(1000).optional()
+})
+
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 20
+const DEFAULT_FACET_LIMIT = 100
 
 export function createRouter(deps: RouterDeps): RouteHandler {
     return async (req: RegistryRequest): Promise<RegistryResponse> => {
@@ -84,12 +103,7 @@ export function createRouter(deps: RouterDeps): RouteHandler {
             return handleSearch(deps, req)
         }
         if (req.method === 'POST' && req.path === '/explore') {
-            return errorResponse(
-                deps,
-                501,
-                'NOT_IMPLEMENTED',
-                'The /explore endpoint is not supported by this registry.'
-            )
+            return handleExplore(deps, req)
         }
         if (req.method === 'GET' && req.path === '/agents') {
             return handleAgents(deps, req)
@@ -209,12 +223,77 @@ async function handleSearch(deps: RouterDeps, req: RegistryRequest): Promise<Reg
     return json(deps, 200, { results })
 }
 
-function handleAgents(deps: RouterDeps, req: RegistryRequest): RegistryResponse {
-    const typeFilter = req.query.get('type')
-    let items = deps.catalog.listAll()
-    if (typeFilter) {
-        items = items.filter((entry) => entry.type === typeFilter)
+/**
+ * Facet the catalog: value counts for type/tags/capabilities over the entries
+ * that survive an optional query + filter.
+ *
+ * The narrowing reuses the same seams as `/search` — {@link matchesFilter} for
+ * the structured filter and the {@link SearchBackend} for free text — so a facet
+ * count always describes exactly the set `/search` would return.
+ */
+async function handleExplore(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(req.body || '{}')
+    } catch {
+        return errorResponse(deps, 400, 'INVALID_ARGUMENT', 'Request body is not valid JSON.')
     }
+
+    const result = ExploreBodySchema.safeParse(parsed)
+    if (!result.success) {
+        const issue = result.error.issues[0]
+        const where = issue?.path.join('.') || 'body'
+        return errorResponse(deps, 400, 'INVALID_ARGUMENT', `Invalid explore request (${where}).`)
+    }
+
+    const { query, facets, limit } = result.data
+    const filter = toBackendFilter(query?.filter)
+    let items = deps.catalog.listAll().filter((entry) => matchesFilter(entry, filter))
+
+    const text = query?.text?.trim()
+    if (text) {
+        // Rank-then-facet: ask for everything that could match so the counts
+        // cover the full result set rather than a first page of it.
+        const hits = await deps.search.search({
+            query: text,
+            limit: Math.max(items.length, 1),
+            filter
+        })
+        items = hits.map((hit) => hit.entry)
+    }
+
+    const requested = facets ?? FACET_NAMES
+    const perFacetLimit = limit ?? DEFAULT_FACET_LIMIT
+    const counted: Record<string, FacetValue[]> = {}
+    for (const facet of requested) {
+        counted[facet] = countFacet(items, facet).slice(0, perFacetLimit)
+    }
+
+    return json(deps, 200, { total: items.length, facets: counted })
+}
+
+interface FacetValue {
+    value: string
+    count: number
+}
+
+/** Value counts for one facet, most frequent first, ties broken alphabetically. */
+function countFacet(entries: CatalogEntry[], facet: FacetName): FacetValue[] {
+    const counts = new Map<string, number>()
+    for (const entry of entries) {
+        const values = facet === 'type' ? [entry.type] : (entry[facet] ?? [])
+        for (const value of values) {
+            counts.set(value, (counts.get(value) ?? 0) + 1)
+        }
+    }
+    return [...counts.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+}
+
+function handleAgents(deps: RouterDeps, req: RegistryRequest): RegistryResponse {
+    const filter = queryFilter(req.query)
+    const items = deps.catalog.listAll().filter((entry) => matchesFilter(entry, filter))
     const total = items.length
 
     const pageSize = clamp(
@@ -246,6 +325,26 @@ function isAuthenticated(req: RegistryRequest, token: string): boolean {
     const expected = new TextEncoder().encode(`Bearer ${token}`)
     const actual = new TextEncoder().encode(presented)
     return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+/**
+ * Build a {@link SearchFilter} from `GET /agents` query params, so listing and
+ * searching share one filter vocabulary (type/tags/capabilities, any-match).
+ * Values may be repeated (`?tags=a&tags=b`) or comma-separated (`?tags=a,b`).
+ */
+function queryFilter(query: URLSearchParams): SearchFilter | undefined {
+    const filter: SearchFilter = {}
+    for (const key of FACET_NAMES) {
+        const values = query
+            .getAll(key)
+            .flatMap((raw) => raw.split(','))
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        if (values.length > 0) {
+            filter[key] = values
+        }
+    }
+    return Object.keys(filter).length > 0 ? filter : undefined
 }
 
 function toBackendFilter(filter?: Record<string, string | string[]>): SearchFilter | undefined {
