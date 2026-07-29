@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.1.0...0.2.0) (2026-07-29)
+
+### Features
+
+* **plugin:** add a status panel with copy-ready client config ([858ea46](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/858ea4697a268069315df24825bd2b0eefa72796)), closes [#6](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/6) [#7](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/7)
+* **plugin:** add POST /explore faceting and richer GET /agents filtering ([4338e65](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/4338e6552dead5dfef725c3c3c1433f431af879b)), closes [#4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/4) [#5](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/5)
+* **plugin:** rank sandbox registry.search like the lexical backend ([6c06359](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/6c06359d49507346f8aa1232d3cf9e59ce7c10d2))
+
+### Performance Improvements
+
+* **plugin:** cache embedding vectors across reloads ([eb8c60c](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/eb8c60ca38b1b8713539bec6e83548ef1e5c8c5d))
+* **plugin:** make skill rescans incremental ([5677815](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/5677815d2df69965376a4d7d1d041f9fcbab4a8f))
+
 ## [0.1.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.0.2...0.1.0) (2026-07-27)
 
 ### Features
@@ -39,5 +52,6 @@ All notable changes to this project will be documented in this file.
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 

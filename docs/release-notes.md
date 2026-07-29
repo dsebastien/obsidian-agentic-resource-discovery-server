@@ -1,5 +1,18 @@
 # Release Notes
 
+## 0.2.0 (2026-07-29)
+
+### Features
+
+- **plugin:** add a status panel with copy-ready client config [#7](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/7)
+- **plugin:** add POST /explore faceting and richer GET /agents filtering [#5](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/5)
+- **plugin:** rank sandbox registry.search like the lexical backend
+
+### Performance Improvements
+
+- **plugin:** cache embedding vectors across reloads
+- **plugin:** make skill rescans incremental
+
 ## 0.1.0 (2026-07-27)
 
 ### Features
