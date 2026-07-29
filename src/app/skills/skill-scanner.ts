@@ -15,6 +15,26 @@ export interface ScanContext {
     baseUrl: string
 }
 
+/** One previously built skill, keyed by its `SKILL.md` path. */
+export interface ScanCacheEntry {
+    mtimeMs: number
+    entry: CatalogEntry
+    folderName: string
+    dir: string
+}
+
+/**
+ * Result of a previous scan, handed back in to skip unchanged files.
+ *
+ * The context is part of the cache because entry URLs and URNs are derived from
+ * it: a different publisher or base URL invalidates every cached entry.
+ */
+export interface ScanCache {
+    publisher: string
+    baseUrl: string
+    files: Map<string, ScanCacheEntry>
+}
+
 export interface ScanOptions {
     chunkSize?: number
     /**
@@ -23,6 +43,11 @@ export interface ScanOptions {
      * Obsidian's UI stays responsive while scanning hundreds of skills.
      */
     scheduler?: () => Promise<void>
+    /**
+     * Cache from the previous scan ({@link ScanResult.cache}). Files whose
+     * mtime is unchanged are reused instead of being re-read and re-parsed.
+     */
+    cache?: ScanCache
 }
 
 export interface ScanResult {
@@ -33,6 +58,12 @@ export interface ScanResult {
     errorCount: number
     /** Skills dropped because another skill already claimed the same URN. */
     duplicateCount: number
+    /** Files actually read + parsed this scan (new or modified). */
+    parsedCount: number
+    /** Files served from the cache because their mtime was unchanged. */
+    reusedCount: number
+    /** Pass into the next scan to make it incremental. */
+    cache: ScanCache
 }
 
 /**
@@ -50,24 +81,45 @@ export async function scanSkillFolders(
 ): Promise<ScanResult> {
     const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE
     const scheduler = options.scheduler ?? (() => Promise.resolve())
+    // A cache built for a different publisher/base URL would yield stale URNs
+    // and URLs, so it is dropped wholesale rather than partially trusted.
+    const previous =
+        options.cache?.publisher === ctx.publisher && options.cache.baseUrl === ctx.baseUrl
+            ? options.cache.files
+            : undefined
 
     const files = await discoverSkillFiles(roots)
 
     const entries: CatalogEntry[] = []
     const folders = new Map<string, string>()
     const seen = new Set<string>()
+    // Rebuilt from scratch every scan, so deleted files simply drop out.
+    const cacheFiles = new Map<string, ScanCacheEntry>()
     let skillCount = 0
     let errorCount = 0
     let duplicateCount = 0
+    let parsedCount = 0
+    let reusedCount = 0
 
     for (let i = 0; i < files.length; i += chunkSize) {
         const chunk = files.slice(i, i + chunkSize)
-        const built = await Promise.all(chunk.map((file) => buildEntry(file, ctx)))
+        const built = await Promise.all(chunk.map((file) => buildEntry(file, ctx, previous)))
         for (const result of built) {
             if (!result) {
                 errorCount++
                 continue
             }
+            if (result.reused) {
+                reusedCount++
+            } else {
+                parsedCount++
+            }
+            cacheFiles.set(result.file, {
+                mtimeMs: result.mtimeMs,
+                entry: result.entry,
+                folderName: result.folderName,
+                dir: result.dir
+            })
             if (seen.has(result.entry.identifier)) {
                 duplicateCount++
                 continue
@@ -80,18 +132,37 @@ export async function scanSkillFolders(
         await scheduler()
     }
 
-    return { entries, folders, skillCount, errorCount, duplicateCount }
+    return {
+        entries,
+        folders,
+        skillCount,
+        errorCount,
+        duplicateCount,
+        parsedCount,
+        reusedCount,
+        cache: { publisher: ctx.publisher, baseUrl: ctx.baseUrl, files: cacheFiles }
+    }
 }
 
-interface BuiltEntry {
-    entry: CatalogEntry
-    folderName: string
-    dir: string
+interface BuiltEntry extends ScanCacheEntry {
+    /** Absolute path of the `SKILL.md` this was built from. */
+    file: string
+    /** True when the cached entry was reused (no read, no parse). */
+    reused: boolean
 }
 
-async function buildEntry(file: string, ctx: ScanContext): Promise<BuiltEntry | null> {
+async function buildEntry(
+    file: string,
+    ctx: ScanContext,
+    previous: Map<string, ScanCacheEntry> | undefined
+): Promise<BuiltEntry | null> {
     try {
-        const [content, stats] = await Promise.all([readFile(file, 'utf-8'), stat(file)])
+        const stats = await stat(file)
+        const cached = previous?.get(file)
+        if (cached && cached.mtimeMs === stats.mtimeMs) {
+            return { ...cached, file, reused: true }
+        }
+        const content = await readFile(file, 'utf-8')
         const dir = dirname(file)
         const folderName = basename(dir)
         const entry = buildSkillEntry({
@@ -101,7 +172,7 @@ async function buildEntry(file: string, ctx: ScanContext): Promise<BuiltEntry | 
             url: `${ctx.baseUrl}/skills/${encodeURIComponent(folderName)}/${SKILL_FILE}`,
             updatedAt: stats.mtime.toISOString()
         })
-        return { entry, folderName, dir }
+        return { entry, folderName, dir, file, mtimeMs: stats.mtimeMs, reused: false }
     } catch {
         return null
     }

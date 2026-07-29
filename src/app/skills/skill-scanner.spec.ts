@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scanSkillFolders } from './skill-scanner'
@@ -67,6 +67,87 @@ describe('scanSkillFolders', () => {
         const result = await scanSkillFolders([join(root, 'does-not-exist')], CTX)
         expect(result.skillCount).toBe(0)
         expect(result.entries).toEqual([])
+    })
+
+    it('reuses cached entries when nothing changed (no re-parse)', async () => {
+        await writeSkill('alpha-skill', 'name: alpha-skill\ndescription: First.')
+        await writeSkill('beta-skill', 'name: beta-skill\ndescription: Second.')
+
+        const first = await scanSkillFolders([root], CTX)
+        expect(first.parsedCount).toBe(2)
+        expect(first.reusedCount).toBe(0)
+
+        const second = await scanSkillFolders([root], CTX, { cache: first.cache })
+        expect(second.parsedCount).toBe(0)
+        expect(second.reusedCount).toBe(2)
+        expect(second.skillCount).toBe(2)
+        expect(second.entries).toEqual(first.entries)
+    })
+
+    it('re-parses only the skill whose file changed', async () => {
+        await writeSkill('alpha-skill', 'name: alpha-skill\ndescription: First.')
+        await writeSkill('beta-skill', 'name: beta-skill\ndescription: Second.')
+        const first = await scanSkillFolders([root], CTX)
+
+        await writeSkill('beta-skill', 'name: beta-skill\ndescription: Rewritten.')
+        // Bump the mtime explicitly: a same-second rewrite can otherwise keep it.
+        const changed = join(root, 'beta-skill', 'SKILL.md')
+        await utimes(changed, new Date(), new Date(Date.now() + 5_000))
+
+        const second = await scanSkillFolders([root], CTX, { cache: first.cache })
+        expect(second.parsedCount).toBe(1)
+        expect(second.reusedCount).toBe(1)
+        const beta = second.entries.find((e) => e.identifier.endsWith('beta-skill'))
+        expect(beta?.description).toBe('Rewritten.')
+    })
+
+    it('picks up a newly added skill without re-parsing the others', async () => {
+        await writeSkill('alpha-skill', 'name: alpha-skill\ndescription: First.')
+        const first = await scanSkillFolders([root], CTX)
+
+        await writeSkill('gamma-skill', 'name: gamma-skill\ndescription: Third.')
+        const second = await scanSkillFolders([root], CTX, { cache: first.cache })
+        expect(second.parsedCount).toBe(1)
+        expect(second.reusedCount).toBe(1)
+        expect(second.skillCount).toBe(2)
+    })
+
+    it('drops entries for deleted skills', async () => {
+        await writeSkill('alpha-skill', 'name: alpha-skill\ndescription: First.')
+        await writeSkill('beta-skill', 'name: beta-skill\ndescription: Second.')
+        const first = await scanSkillFolders([root], CTX)
+
+        await rm(join(root, 'beta-skill'), { recursive: true, force: true })
+        const second = await scanSkillFolders([root], CTX, { cache: first.cache })
+        expect(second.skillCount).toBe(1)
+        expect(second.entries.map((e) => e.identifier)).toEqual([
+            'urn:air:obsidian:skills:alpha-skill'
+        ])
+        expect(second.cache.files.size).toBe(1)
+    })
+
+    it('ignores a cache built for a different publisher or base url', async () => {
+        await writeSkill('alpha-skill', 'name: alpha-skill\ndescription: First.')
+        const first = await scanSkillFolders([root], CTX)
+
+        const moved = { publisher: 'example.com', baseUrl: 'http://127.0.0.1:30000' }
+        const second = await scanSkillFolders([root], moved, { cache: first.cache })
+        expect(second.parsedCount).toBe(1)
+        expect(second.reusedCount).toBe(0)
+        expect(second.entries[0]?.identifier).toBe('urn:air:example.com:skills:alpha-skill')
+        expect(second.entries[0]?.url).toBe('http://127.0.0.1:30000/skills/alpha-skill/SKILL.md')
+    })
+
+    it('keeps duplicate handling correct across an incremental scan', async () => {
+        await writeSkill('dir-one/dup', 'name: dup\ndescription: One.')
+        await writeSkill('dir-two/dup', 'name: dup\ndescription: Two.')
+        const first = await scanSkillFolders([root], CTX)
+        expect(first.duplicateCount).toBe(1)
+
+        const second = await scanSkillFolders([root], CTX, { cache: first.cache })
+        expect(second.duplicateCount).toBe(1)
+        expect(second.skillCount).toBe(1)
+        expect(second.parsedCount).toBe(0)
     })
 
     it('yields to the injected scheduler between chunks', async () => {
