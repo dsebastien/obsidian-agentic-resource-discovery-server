@@ -31,4 +31,10 @@ search:
 heading_anchors: true
 color_scheme: light
 
-footer_content: 'Agentic Resource Discovery Server — by <a href="https://dsebastien.net">Sébastien Dubois</a>. Released under the <a href="https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/blob/main/LICENSE">MIT license</a>.'
+footer_content: >-
+  Made by <a href="https://dsebastien.net">Sébastien Dubois</a>.
+  Support this plugin: <a href="https://www.store.dsebastien.net/product/knowii-community/">Join Knowii</a> &middot;
+  <a href="https://github.com/sponsors/dsebastien">GitHub Sponsors</a> &middot;
+  <a href="https://www.buymeacoffee.com/dsebastien">Buy me a coffee</a> &middot;
+  <a href="https://youtube.com/@dsebastien">YouTube</a> &middot;
+  <a href="https://store.dsebastien.net">Products</a>
