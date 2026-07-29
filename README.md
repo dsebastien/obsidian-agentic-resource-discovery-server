@@ -10,9 +10,12 @@ Turn your Obsidian vault into a **local-first [Agentic Resource Discovery (ARD)]
 - **Serves an ARD registry over `http://127.0.0.1`** with a required bearer token:
     - `GET /.well-known/ai-catalog.json` — the public catalog
     - `POST /search` — natural-language search, results ranked 0–100 by relevance
-    - `GET /agents` — deterministic, paginated listing
+    - `POST /explore` — facet counts (types, tags, capabilities) so an agent can see what's available before searching
+    - `GET /agents` — deterministic, paginated listing, filterable by `type`, `tags`, and `capabilities`
     - `GET /skills/<name>/SKILL.md` (and bundled assets) — so an agent can fetch a skill's body and resources directly
-- **Exposes an MCP endpoint** (`POST /mcp`) using the **Code Mode** pattern: `search`, `get_skill`, and `execute` tools, where `execute` runs sandboxed JavaScript against the catalog so an agent can filter and aggregate in a single call.
+- **Exposes an MCP endpoint** (`POST /mcp`) using the **Code Mode** pattern: `search`, `get_skill`, and `execute` tools, where `execute` runs sandboxed JavaScript against the catalog so an agent can filter and aggregate in a single call — with the same ranking as `POST /search`.
+- **Shows what's running.** The settings **Status** panel reports the server URL, catalog size, last scan, embedding state, and the MCP endpoint — with one-click **Copy MCP config** and **Copy curl example** buttons.
+- **Stays fast on repeat use.** Rescans only re-parse `SKILL.md` files that actually changed, and embedding vectors are cached across reloads, so a warm restart with a semantic backend is ready immediately.
 - **Adds zero mandatory downloads.** The default search backend is an in-process BM25 index (MiniSearch) — no model, no network. Optionally, point it at a local embedding server you already run (Ollama, LM Studio, …) for hybrid semantic search; nothing is bundled or downloaded by the plugin, and it falls back to lexical if the server is down.
 
 ## Status
@@ -33,8 +36,8 @@ This plugin isn't in the community catalog yet. To try it:
 
 1. Open the plugin settings.
 2. Under **Skill folders**, add one or more folders that contain skills (each skill is a subfolder with a `SKILL.md`). Folders may live outside the vault.
-3. Click **Rescan skills now**. The status line shows how many skills were indexed.
-4. Copy the **bearer token** from the **Server** section.
+3. Click **Rescan skills now**. The **Status** panel shows how many skills were indexed.
+4. Copy the **bearer token** from the **Server** section (or use **Copy MCP config** in **Status** to get a ready-to-paste client config).
 5. Point an agent at the registry:
 
 ```bash

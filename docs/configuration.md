@@ -55,10 +55,12 @@ With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the d
 
 If the embedding endpoint is unreachable, slow to start, or rejects the key, searches **fall back to lexical automatically** — search never breaks. Changing any backend field restarts the registry. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
 
-Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the first time — a GPU-backed server, a hosted API, or a smaller model is much faster. If the embedding server starts _after_ the plugin (or recovers from an outage), the plugin retries automatically about every 30 seconds; you can also press **Reindex** to pick it up immediately.
+Embeddings build in the background after each scan, so semantic ranking turns on a little after startup; until it's ready, you get lexical results. On a CPU-only embedding server a large catalog (hundreds of skills) can take roughly a minute to embed the **first** time — a GPU-backed server, a hosted API, or a smaller model is much faster. After that, vectors are cached, so later reloads are ready almost immediately and only skills you actually edited get re-embedded. Switching model or provider invalidates the cache (the vectors are no longer comparable). The **Embeddings** row in the **Status** panel shows where the build is. If the embedding server starts _after_ the plugin (or recovers from an outage), the plugin retries automatically about every 30 seconds; you can also press **Reindex** to pick it up immediately.
 
 **Reindex** rebuilds the search index over the current catalog without rescanning your folders — useful after switching backend or to refresh a stale index. A full **Rescan skills now** also reindexes, so you only need Reindex when the catalog hasn't changed.
 
 ## Where settings are stored
 
 Settings persist in the vault's plugin data (`.obsidian/plugins/agentic-resource-discovery-server/data.json`). The bearer token and any API keys are stored there — treat that file as sensitive. Settings are validated on load, so a corrupt or partial file falls back to safe defaults rather than failing.
+
+With a semantic backend, cached embedding vectors are kept next to it in `embedding-cache.json`. It contains no secrets and is safe to delete — the next scan simply rebuilds it.

@@ -8,7 +8,8 @@ The ubiquitous language of this plugin. Use these terms exactly in code, tests, 
 - **AI Catalog (`ai-catalog.json`)** — the static manifest a publisher hosts: `{ specVersion: "1.0", host?, entries: CatalogEntry[] }`. Served at `/.well-known/ai-catalog.json`.
 - **Catalog entry** — one resource in the catalog. Required: `identifier` (URN), `displayName`, `type`. Exactly one of `url | data`. Optional: `description`, `tags`, `capabilities`, `representativeQueries` (2–5), `version`, `updatedAt`, plus `x-*` extension fields.
 - **URN (`urn:air:<publisher>:<segments>`)** — a stable, domain-anchored identifier. This plugin uses publisher `obsidian` by default; skills are `urn:air:obsidian:skills:<name>`.
-- **Agent Registry** — the dynamic search layer over a catalog. Mandatory `POST /search`; optional `POST /explore`, `GET /agents`.
+- **Agent Registry** — the dynamic search layer over a catalog. Mandatory `POST /search`; optional `POST /explore` and `GET /agents` (both implemented here).
+- **Facet** — a value count over the catalog returned by `POST /explore`: `{ type | tags | capabilities: [{ value, count }] }`, computed over the entries an optional query/filter leaves.
 - **Relevance score** — `0–100` on each search result. **Relevance only — never a trust or safety rating** (a hard rule from the spec).
 - **Representative queries** — 2–5 natural-language example queries per entry that a registry turns into search signal.
 
@@ -22,6 +23,9 @@ The ubiquitous language of this plugin. Use these terms exactly in code, tests, 
 - **Search backend** — the relevance-ranking engine behind `POST /search` (interface `SearchBackend`; default lexical BM25).
 - **Code Mode** — the MCP `execute` tool: the model writes JavaScript that calls an injected `registry` API inside a sandbox, returning only the result (avoids streaming the whole catalog through context).
 - **Registry** (in code) — the running unit owned by `RegistryController`: catalog + search backend + skill file service + HTTP server.
+- **Coordinator** — `RegistryCoordinator`: the lifecycle brain (operation mutex, dispose guard, restart-vs-rebuild decision, watcher reconcile). Obsidian-free and unit-tested.
+- **Scan cache** — per-file `mtime` map from the previous scan (`ScanCache`); an unchanged `SKILL.md` is reused instead of re-parsed (incremental rescan).
+- **Embedding cache** — vectors persisted across reloads, keyed by a hash of the embedded text + embedder id + dimensions, so a warm restart skips re-embedding.
 
 ## Relationships
 
