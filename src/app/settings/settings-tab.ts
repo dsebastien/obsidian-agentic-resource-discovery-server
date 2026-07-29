@@ -10,6 +10,14 @@ import {
 import { BUY_ME_A_COFFEE_BADGE_DATA_URL } from '../assets/buy-me-a-coffee'
 import { FolderSuggest } from './components/folder-suggest'
 import { generateBearerToken } from '../utils/token'
+import { MCP_TOOL_NAMES } from '../mcp/mcp-server'
+import {
+    buildMcpClientConfig,
+    buildSearchCurlExample,
+    mcpEndpointUrl,
+    registryBaseUrl
+} from './mcp-client-config'
+import type { EmbeddingState } from '../search/semantic-search-backend'
 
 /** Human-readable labels for the search backend kinds. */
 const BACKEND_LABELS: Record<SearchBackendConfig['kind'], string> = {
@@ -26,6 +34,21 @@ const RESOURCE_TYPE_LABELS: Record<(typeof MANUAL_RESOURCE_TYPES)[number], strin
     'application/ai-registry+json': 'Registry'
 }
 
+/** Plain-language labels for the dense-vector index lifecycle. */
+const EMBEDDING_STATE_LABELS: Record<EmbeddingState, string> = {
+    idle: 'Idle (nothing to embed yet)',
+    building: 'Building… (search stays lexical meanwhile)',
+    ready: 'Ready (hybrid search active)',
+    failed: 'Failed — falling back to lexical; retrying periodically'
+}
+
+const EMBEDDING_STATE_STYLES: Record<EmbeddingState, 'normal' | 'ok' | 'error' | 'muted'> = {
+    idle: 'muted',
+    building: 'normal',
+    ready: 'ok',
+    failed: 'error'
+}
+
 export class ArdServerSettingTab extends PluginSettingTab {
     plugin: ArdServerPlugin
 
@@ -38,11 +61,116 @@ export class ArdServerSettingTab extends PluginSettingTab {
         const { containerEl } = this
         containerEl.empty()
 
+        this.renderStatusSection(containerEl)
         this.renderServerSection(containerEl)
         this.renderSkillFoldersSection(containerEl)
         this.renderResourcesSection(containerEl)
         this.renderSearchBackendSection(containerEl)
         this.renderSupportSection(containerEl)
+    }
+
+    // ----- Section 0: Status -----
+
+    /**
+     * Read-only view of what the registry is doing right now. Rendered from live
+     * controller state on every `display()`, so reopening the tab (or a
+     * background rescan, which re-displays it) refreshes it.
+     */
+    private renderStatusSection(containerEl: HTMLElement): void {
+        new Setting(containerEl).setName('Status').setHeading()
+
+        const registry = this.plugin.registry
+        const port = registry.port ?? this.plugin.settings.server.port
+        const grid = containerEl.createDiv({ cls: 'ard-status' })
+
+        if (registry.isRunning) {
+            this.addStatusRow(grid, 'Server', `Running — ${registryBaseUrl(port)}`, {
+                state: 'ok',
+                mono: true
+            })
+        } else {
+            this.addStatusRow(grid, 'Server', 'Stopped', { state: 'error' })
+        }
+
+        this.addStatusRow(grid, 'Catalog', `${registry.catalogSize} entries`)
+
+        const stats = this.plugin.settings.lastScanStats
+        this.addStatusRow(
+            grid,
+            'Last scan',
+            stats.lastScanAt
+                ? `${stats.skillCount} skills, ${stats.errorCount} errors (${stats.lastScanAt})`
+                : 'Not scanned yet',
+            { state: stats.lastScanAt ? 'normal' : 'muted' }
+        )
+
+        this.addStatusRow(grid, 'Search backend', registry.searchBackendName)
+
+        const embeddingState = registry.embeddingState
+        if (embeddingState) {
+            this.addStatusRow(grid, 'Embeddings', EMBEDDING_STATE_LABELS[embeddingState], {
+                state: EMBEDDING_STATE_STYLES[embeddingState]
+            })
+        }
+
+        this.addStatusRow(grid, 'MCP endpoint', mcpEndpointUrl(port), { mono: true })
+        this.addStatusRow(grid, 'MCP tools', MCP_TOOL_NAMES.join(', '))
+
+        new Setting(containerEl)
+            .setName('Client setup')
+            .setDesc('Copy a ready-to-paste MCP server config, or a curl call to try the API.')
+            .addButton((button) =>
+                button
+                    .setButtonText('Copy MCP config')
+                    .setCta()
+                    .onClick(() => {
+                        void this.copyToClipboard(
+                            buildMcpClientConfig({
+                                port,
+                                bearerToken: this.plugin.settings.server.bearerToken
+                            }),
+                            'MCP client config copied'
+                        )
+                    })
+            )
+            .addButton((button) =>
+                button.setButtonText('Copy curl example').onClick(() => {
+                    void this.copyToClipboard(
+                        buildSearchCurlExample({
+                            port,
+                            bearerToken: this.plugin.settings.server.bearerToken
+                        }),
+                        'curl example copied'
+                    )
+                })
+            )
+    }
+
+    private addStatusRow(
+        grid: HTMLElement,
+        label: string,
+        value: string,
+        options: { state?: 'normal' | 'ok' | 'error' | 'muted'; mono?: boolean } = {}
+    ): void {
+        grid.createDiv({ cls: 'ard-status-label', text: label })
+        const classes = ['ard-status-value']
+        if (options.mono) {
+            classes.push('ard-status-value-mono')
+        }
+        if (options.state === 'ok') classes.push('ard-status-ok')
+        if (options.state === 'error') classes.push('ard-status-error')
+        if (options.state === 'muted') classes.push('ard-status-muted')
+        grid.createDiv({ cls: classes.join(' '), text: value })
+    }
+
+    /** Copy text, confirming with a Notice (both success and failure are silent otherwise). */
+    private async copyToClipboard(text: string, confirmation: string): Promise<void> {
+        try {
+            await navigator.clipboard.writeText(text)
+            new Notice(confirmation)
+        } catch {
+            new Notice('Could not access the clipboard')
+        }
     }
 
     // ----- Section 1: Server -----

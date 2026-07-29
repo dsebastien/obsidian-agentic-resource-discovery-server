@@ -24,3 +24,40 @@
 .ard-setting-warning {
     color: var(--text-error);
 }
+
+/* ========================================
+   STATUS PANEL
+   ======================================== */
+
+/* Read-only label/value grid: server, catalog, search, MCP */
+.ard-status {
+    @apply grid gap-x-4 gap-y-1 mb-4;
+    grid-template-columns: max-content 1fr;
+}
+
+.ard-status-label {
+    @apply text-sm;
+    color: var(--text-muted);
+}
+
+.ard-status-value {
+    @apply text-sm break-all;
+    color: var(--text-normal);
+}
+
+/* Value carrying a URL or an identifier */
+.ard-status-value-mono {
+    @apply font-mono;
+}
+
+.ard-status-ok {
+    color: var(--text-success, var(--text-accent));
+}
+
+.ard-status-error {
+    color: var(--text-error);
+}
+
+.ard-status-muted {
+    color: var(--text-muted);
+}
