@@ -12,7 +12,7 @@ import { scanSkillFolders, type ScanResult } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
-import { registerWhatsNewDialog } from './whats-new'
+import { registerWhatsNewView } from './whats-new'
 
 /** Side file (next to the plugin) holding cached embedding vectors. */
 const EMBEDDING_CACHE_FILE = 'embedding-cache.json'
@@ -69,7 +69,7 @@ export class ArdServerPlugin extends Plugin {
 
     override async onload(): Promise<void> {
         // Must run before anything can call saveData (fresh-install detection)
-        registerWhatsNewDialog(this)
+        registerWhatsNewView(this)
         log('Initializing', 'debug')
         await this.loadSettings()
         await this.ensureBearerToken()
