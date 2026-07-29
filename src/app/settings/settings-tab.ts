@@ -18,6 +18,10 @@ import {
     registryBaseUrl
 } from './mcp-client-config'
 import type { EmbeddingState } from '../search/semantic-search-backend'
+import {
+    BUY_ME_A_COFFEE_URL,
+    renderSupportSection as renderSharedSupportSection
+} from '../ui/support-links'
 
 /** Human-readable labels for the search backend kinds. */
 const BACKEND_LABELS: Record<SearchBackendConfig['kind'], string> = {
@@ -581,20 +585,14 @@ export class ArdServerSettingTab extends PluginSettingTab {
     // ----- Section 5: Support -----
 
     private renderSupportSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Support').setHeading()
-
-        const supportDesc = new DocumentFragment()
-        supportDesc.createDiv({
-            text: 'Buy me a coffee to support the development of this plugin ❤️'
+        renderSharedSupportSection(containerEl, (el) => {
+            const linkEl = el.createEl('a', {
+                href: BUY_ME_A_COFFEE_URL
+            })
+            const imgEl = linkEl.createEl('img')
+            imgEl.src = BUY_ME_A_COFFEE_BADGE_DATA_URL
+            imgEl.alt = 'Buy me a coffee'
+            imgEl.width = 175
         })
-        new Setting(containerEl).setDesc(supportDesc)
-
-        const linkEl = containerEl.createEl('a', {
-            href: 'https://www.buymeacoffee.com/dsebastien'
-        })
-        const imgEl = linkEl.createEl('img')
-        imgEl.src = BUY_ME_A_COFFEE_BADGE_DATA_URL
-        imgEl.alt = 'Buy me a coffee'
-        imgEl.width = 175
     }
 }
