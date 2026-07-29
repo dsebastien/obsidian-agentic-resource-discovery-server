@@ -1,4 +1,5 @@
 import type { SearchBackendConfig } from '../types/plugin-settings.intf'
+import type { EmbeddingCache } from './embedding/embedding-cache'
 import { resolveHostedEmbedderConfig } from './embedding/hosted-embedding'
 import { HttpEmbedder } from './embedding/http-embedder'
 import { LexicalSearchBackend } from './lexical-search-backend'
@@ -17,18 +18,28 @@ import { SemanticSearchBackend } from './semantic-search-backend'
  * selecting it never breaks search. `hosted-api` is the same hybrid backend
  * pointed at a remote OpenAI-compatible embedding API (BYO key). Each is a
  * drop-in `SearchBackend` on this switch.
+ *
+ * `cache` (optional) persists embedding vectors across reloads so a warm start
+ * skips re-embedding unchanged skills; the lexical backend ignores it.
  */
-export function createSearchBackend(config: SearchBackendConfig): SearchBackend {
+export function createSearchBackend(
+    config: SearchBackendConfig,
+    cache?: EmbeddingCache
+): SearchBackend {
     switch (config.kind) {
         case 'local-model':
             return new SemanticSearchBackend(
                 new HttpEmbedder({
                     url: config.embeddingServerUrl,
                     model: config.embeddingModel
-                })
+                }),
+                cache
             )
         case 'hosted-api':
-            return new SemanticSearchBackend(new HttpEmbedder(resolveHostedEmbedderConfig(config)))
+            return new SemanticSearchBackend(
+                new HttpEmbedder(resolveHostedEmbedderConfig(config)),
+                cache
+            )
         case 'lexical':
         default:
             return new LexicalSearchBackend()

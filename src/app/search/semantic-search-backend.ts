@@ -1,5 +1,10 @@
 import type { CatalogEntry } from '../types/ard.types'
 import type { Embedder } from './embedding/embedder'
+import {
+    embeddingCacheKey,
+    NullEmbeddingCache,
+    type EmbeddingCache
+} from './embedding/embedding-cache'
 import { LexicalSearchBackend } from './lexical-search-backend'
 import { fusedToArdScores, reciprocalRankFusion } from './rrf'
 import type { SearchBackend, SearchRequest, SearchResult } from './search-backend'
@@ -38,7 +43,10 @@ export class SemanticSearchBackend implements SearchBackend {
     /** Consecutive query-time embed failures; flips state to `failed` at the threshold. */
     private queryFailures = 0
 
-    constructor(private readonly embedder: Embedder) {}
+    constructor(
+        private readonly embedder: Embedder,
+        private readonly cache: EmbeddingCache = new NullEmbeddingCache()
+    ) {}
 
     /** Whether the dense-vector signal is live (false → lexical-only fallback). */
     get embeddingsReady(): boolean {
@@ -135,17 +143,48 @@ export class SemanticSearchBackend implements SearchBackend {
         return results
     }
 
+    /**
+     * Embed every entry, reusing cached vectors for unchanged text.
+     *
+     * Only cache misses are sent to the embedder, so a reload with unchanged
+     * skills does no network work at all (the embedder isn't even loaded), and
+     * editing one skill re-embeds exactly one entry.
+     */
     private async buildEmbeddings(entries: CatalogEntry[], generation: number): Promise<void> {
+        const texts = entries.map(entryText)
+        const keys = texts.map((text) =>
+            embeddingCacheKey(this.embedder.id, this.embedder.dimensions, text)
+        )
         try {
-            await this.embedder.load()
-            const vectors = await this.embedder.embed(entries.map(entryText))
+            const cached = keys.map((key) => this.cache.get(key))
+            const missing = texts
+                .map((text, i) => ({ text, i }))
+                .filter((candidate) => cached[candidate.i] === undefined)
+
+            if (missing.length > 0) {
+                await this.embedder.load()
+                const fresh = await this.embedder.embed(missing.map((candidate) => candidate.text))
+                if (generation !== this.generation) {
+                    return // a newer index() superseded this run
+                }
+                missing.forEach((candidate, n) => {
+                    const vector = fresh[n]
+                    if (vector) {
+                        cached[candidate.i] = vector
+                        const key = keys[candidate.i]
+                        if (key) {
+                            this.cache.set(key, vector)
+                        }
+                    }
+                })
+            }
             if (generation !== this.generation) {
-                return // a newer index() superseded this run
+                return
             }
             this.vectors.replace(
                 entries.map((entry, i) => ({
                     id: entry.identifier,
-                    vector: vectors[i] ?? new Float32Array(this.embedder.dimensions)
+                    vector: cached[i] ?? new Float32Array(this.embedder.dimensions)
                 }))
             )
             this.state = 'ready'
@@ -155,6 +194,14 @@ export class SemanticSearchBackend implements SearchBackend {
             if (generation === this.generation) {
                 this.state = 'failed'
             }
+            return
+        }
+        try {
+            // Persisted after the state flip: a failed write costs a rebuild
+            // next reload, it must never turn a good index into a failed one.
+            await this.cache.save(keys)
+        } catch {
+            // best-effort
         }
     }
 }

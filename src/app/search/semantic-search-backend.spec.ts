@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import type { CatalogEntry } from '../types/ard.types'
 import type { Embedder } from './embedding/embedder'
+import type { EmbeddingCache } from './embedding/embedding-cache'
 import { SemanticSearchBackend } from './semantic-search-backend'
 
 const entry = (id: string, over: Partial<CatalogEntry> = {}): CatalogEntry => ({
@@ -42,6 +43,47 @@ function failingEmbedder(): Embedder {
         },
         embed: async () => {
             throw new Error('not loaded')
+        }
+    }
+}
+
+/** Wraps an embedder to count load()/embed() work. */
+function counting(embedder: Embedder): { embedder: Embedder; loads: number; embedded: number } {
+    const counters = {
+        loads: 0,
+        embedded: 0,
+        embedder: {
+            ...embedder,
+            load: async () => {
+                counters.loads++
+                await embedder.load()
+            },
+            embed: async (texts: string[]) => {
+                counters.embedded += texts.length
+                return embedder.embed(texts)
+            }
+        }
+    }
+    return counters
+}
+
+/** In-memory embedding cache that survives across backend instances. */
+function countingCache(): EmbeddingCache & { vectors: Map<string, Float32Array>; saves: number } {
+    return {
+        vectors: new Map<string, Float32Array>(),
+        saves: 0,
+        get(key: string) {
+            return this.vectors.get(key)
+        },
+        set(key: string, vector: Float32Array) {
+            this.vectors.set(key, vector)
+        },
+        async save(keysInUse: string[]) {
+            this.saves++
+            const keep = new Set(keysInUse)
+            for (const key of [...this.vectors.keys()]) {
+                if (!keep.has(key)) this.vectors.delete(key)
+            }
         }
     }
 }
@@ -196,6 +238,71 @@ describe('SemanticSearchBackend', () => {
         expect(loads).toBe(0)
         expect(backend.embeddingsReady).toBe(false)
         expect(await backend.search({ query: 'anything' })).toEqual([])
+    })
+
+    it('embeds nothing on a warm start with an unchanged catalog', async () => {
+        const cache = countingCache()
+        const first = counting(fakeEmbedder(() => [1, 0, 0]))
+        const warm = new SemanticSearchBackend(first.embedder, cache)
+        await warm.index(ENTRIES)
+        await warm.whenEmbeddingsSettled()
+        expect(first.embedded).toBe(3)
+        expect(cache.saves).toBe(1)
+
+        const second = counting(fakeEmbedder(() => [1, 0, 0]))
+        const restarted = new SemanticSearchBackend(second.embedder, cache)
+        await restarted.index(ENTRIES)
+        await restarted.whenEmbeddingsSettled()
+
+        expect(second.embedded).toBe(0)
+        expect(second.loads).toBe(0) // the embedder is never even contacted
+        expect(restarted.embeddingState).toBe('ready')
+    })
+
+    it('re-embeds only the entry whose text changed', async () => {
+        const cache = countingCache()
+        const first = counting(fakeEmbedder(() => [1, 0, 0]))
+        const backend = new SemanticSearchBackend(first.embedder, cache)
+        await backend.index(ENTRIES)
+        await backend.whenEmbeddingsSettled()
+
+        const edited = [
+            ENTRIES[0] as CatalogEntry,
+            ENTRIES[1] as CatalogEntry,
+            entry('calendar', { description: 'schedule meetings, events and reminders' })
+        ]
+        const second = counting(fakeEmbedder(() => [0, 1, 0]))
+        const rebuilt = new SemanticSearchBackend(second.embedder, cache)
+        await rebuilt.index(edited)
+        await rebuilt.whenEmbeddingsSettled()
+
+        expect(second.embedded).toBe(1)
+        expect(rebuilt.embeddingState).toBe('ready')
+    })
+
+    it('invalidates the cache when the embedding model changes', async () => {
+        const cache = countingCache()
+        const first = counting(fakeEmbedder(() => [1, 0, 0]))
+        const backend = new SemanticSearchBackend(first.embedder, cache)
+        await backend.index(ENTRIES)
+        await backend.whenEmbeddingsSettled()
+
+        const other = counting({ ...fakeEmbedder(() => [0, 1, 0]), id: 'other-model' })
+        const switched = new SemanticSearchBackend(other.embedder, cache)
+        await switched.index(ENTRIES)
+        await switched.whenEmbeddingsSettled()
+
+        expect(other.embedded).toBe(3)
+    })
+
+    it('does not cache anything when the build fails', async () => {
+        const cache = countingCache()
+        const backend = new SemanticSearchBackend(failingEmbedder(), cache)
+        await backend.index(ENTRIES)
+        await backend.whenEmbeddingsSettled()
+        expect(backend.embeddingState).toBe('failed')
+        expect(cache.vectors.size).toBe(0)
+        expect(cache.saves).toBe(0)
     })
 
     it('a reindex replaces the prior vectors', async () => {
