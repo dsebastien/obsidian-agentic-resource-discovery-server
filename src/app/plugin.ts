@@ -121,19 +121,33 @@ export class ArdServerPlugin extends Plugin {
         await this.saveSettings()
     }
 
+    /** Serializes settings writes; see updateSettings. */
+    private settingsWriteChain: Promise<void> = Promise.resolve()
+
     /**
      * Apply an immutable update, persist it, and reconcile the running server.
      *
      * Persist-then-commit: memory is swapped only after saveData() succeeds,
      * so the declarative tab's rejection-based rollback reads the on-disk
      * truth rather than an optimistic mutation that never landed.
+     *
+     * Serialized: writes queue and each mutation derives from the previous
+     * COMMITTED state — overlapping calls would otherwise produce from the
+     * same base across the save await and silently drop the earlier edit.
+     * applySettings runs inside the chain too, so server reconciliation sees
+     * every intermediate state in order.
      */
-    async updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
-        const previous = this.settings
-        const next = produce(this.settings, updater)
-        await this.saveData(next)
-        this.settings = next
-        await this.coordinator.applySettings(previous, this.settings)
+    updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
+        const run = async (): Promise<void> => {
+            const previous = this.settings
+            const next = produce(this.settings, updater)
+            await this.saveData(next)
+            this.settings = next
+            await this.coordinator.applySettings(previous, this.settings)
+        }
+        const p = this.settingsWriteChain.then(run, run)
+        this.settingsWriteChain = p.catch(() => {})
+        return p
     }
 
     async saveSettings(): Promise<void> {
