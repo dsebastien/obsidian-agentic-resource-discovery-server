@@ -514,7 +514,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
         const backend = this.plugin.settings.searchBackend
         new Setting(containerEl)
             .setName('Provider')
-            .setDesc('OpenAI-compatible embedding provider, or Custom for any other gateway.')
+            .setDesc('OpenAI-compatible embedding provider, or custom for any other gateway.')
             .addDropdown((dropdown) => {
                 for (const provider of HOSTED_EMBEDDING_PROVIDERS) {
                     dropdown.addOption(provider, provider)

@@ -27,6 +27,8 @@ export default defineConfig([
             globals: {
                 ...globals.node,
                 ...globals.browser,
+                // Tests and build tooling run under the Bun runtime
+                Bun: 'readonly',
                 // Obsidian global functions
                 createDiv: 'readonly',
                 createEl: 'readonly',
@@ -63,8 +65,33 @@ export default defineConfig([
             'no-prototype-builtins': 'off',
             // Allow confirm for delete confirmations
             'no-alert': 'off',
-            // Disable sentence case rule - it has false positives for already-correct text
-            'obsidianmd/ui/sentence-case': 'off'
+            // Never disable obsidianmd/* rules here: the community catalog
+            // reviewer runs its own ruleset against the git archive, so a
+            // local disable only hides the finding until submission.
+            // Brand names are the supported escape hatch for sentence-case.
+            'obsidianmd/ui/sentence-case': [
+                'error',
+                {
+                    brands: [
+                        'Knowii',
+                        'X',
+                        'GitHub Sponsors',
+                        'Sébastien Dubois',
+                        'dSebastien',
+                        // Repo-specific product/protocol names in settings copy
+                        'Ollama',
+                        'LM Studio',
+                        'llama.cpp',
+                        'OpenAI',
+                        'Obsidian',
+                        'Bearer'
+                    ],
+                    acronyms: ['MCP', 'URN', 'BM25', 'A2A', 'API', 'CORS', 'POST', 'URL'],
+                    // Single-token literals (placeholders, URLs, model ids) are
+                    // values, not sentences.
+                    ignoreRegex: ['^\\S+$']
+                }
+            ]
         }
     },
     {
