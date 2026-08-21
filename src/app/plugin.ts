@@ -121,11 +121,18 @@ export class ArdServerPlugin extends Plugin {
         await this.saveSettings()
     }
 
-    /** Apply an immutable update, persist it, and reconcile the running server. */
+    /**
+     * Apply an immutable update, persist it, and reconcile the running server.
+     *
+     * Persist-then-commit: memory is swapped only after saveData() succeeds,
+     * so the declarative tab's rejection-based rollback reads the on-disk
+     * truth rather than an optimistic mutation that never landed.
+     */
     async updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
         const previous = this.settings
-        this.settings = produce(this.settings, updater)
-        await this.saveSettings()
+        const next = produce(this.settings, updater)
+        await this.saveData(next)
+        this.settings = next
         await this.coordinator.applySettings(previous, this.settings)
     }
 
