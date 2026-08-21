@@ -139,3 +139,9 @@
     .setting-item-description {
     @apply pr-3;
 }
+
+/* Declarative settings: rows that render a full-width section (status grid,
+   support links, warnings) instead of the standard name/control layout. */
+.ard-settings-embed {
+    @apply block;
+}

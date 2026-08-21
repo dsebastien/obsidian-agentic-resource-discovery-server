@@ -1,4 +1,5 @@
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian'
+import { Notice, PluginSettingTab } from 'obsidian'
+import type { App, Setting, SettingDefinitionItem, SettingGroupItem } from 'obsidian'
 import type ArdServerPlugin from '../../main'
 import {
     HOSTED_EMBEDDING_PROVIDERS,
@@ -53,6 +54,24 @@ const EMBEDDING_STATE_STYLES: Record<EmbeddingState, 'normal' | 'ok' | 'error' |
     failed: 'error'
 }
 
+/**
+ * Settings tab, declared rather than rendered (Obsidian 1.13+).
+ *
+ * `getSettingDefinitions()` REPLACES `display()` — Obsidian owns navigation,
+ * focus and ARIA, and every declared `name`/`desc` is indexed by the settings
+ * search. Scalars are `control` definitions addressed by a key resolved in
+ * `getControlValue`/`setControlValue`; every write still goes through
+ * `plugin.updateSettings`, the single persistence path.
+ *
+ * Manual resources are keyed by their stable `id` (`resource.<id>.<field>`),
+ * never by index: the framework re-indexes list rows on drag immediately,
+ * while our settings refresh waits on persistence, so index-based value keys
+ * would write to the wrong resource. `onDelete(index)` deliberately uses the
+ * LIVE index, per the framework contract.
+ *
+ * See AGENTS.md "Declarative settings" for the full trap list;
+ * `settings-guard.spec.ts` enforces the statically-catchable rules.
+ */
 export class ArdServerSettingTab extends PluginSettingTab {
     plugin: ArdServerPlugin
 
@@ -61,28 +80,239 @@ export class ArdServerSettingTab extends PluginSettingTab {
         this.plugin = plugin
     }
 
-    override display(): void {
-        const { containerEl } = this
-        containerEl.empty()
+    override getSettingDefinitions(): SettingDefinitionItem[] {
+        return [
+            this.statusGroup(),
+            this.serverGroup(),
+            this.skillFoldersIntroGroup(),
+            this.skillFoldersList(),
+            this.skillFoldersOptionsGroup(),
+            this.resourcesIntroGroup(),
+            this.resourcesList(),
+            this.searchBackendGroup(),
+            this.supportGroup()
+        ]
+    }
 
-        this.renderStatusSection(containerEl)
-        this.renderServerSection(containerEl)
-        this.renderSkillFoldersSection(containerEl)
-        this.renderResourcesSection(containerEl)
-        this.renderSearchBackendSection(containerEl)
-        this.renderSupportSection(containerEl)
+    // ----- Control value plumbing -----
+
+    /** Text controls hand us `unknown`; anything that isn't a string is refused. */
+    private static asString(value: unknown): string {
+        if (typeof value !== 'string') {
+            throw new Error('Expected a text value.')
+        }
+        return value
+    }
+
+    override getControlValue(key: string): unknown {
+        const s = this.plugin.settings
+        switch (key) {
+            case 'server.port':
+                return s.server.port
+            case 'publisher':
+                return s.publisher
+            case 'catalogDisplayName':
+                return s.catalogDisplayName
+            case 'watchSkillFolders':
+                return s.watchSkillFolders
+            case 'searchBackend.kind':
+                return s.searchBackend.kind
+            case 'searchBackend.embeddingServerUrl':
+                return s.searchBackend.embeddingServerUrl
+            case 'searchBackend.embeddingModel':
+                return s.searchBackend.embeddingModel
+            case 'searchBackend.apiProvider':
+                return s.searchBackend.apiProvider
+            case 'searchBackend.apiBaseUrl':
+                return s.searchBackend.apiBaseUrl ?? ''
+            case 'searchBackend.apiModel':
+                return s.searchBackend.apiModel ?? ''
+        }
+        const resource = this.parseResourceKey(key)
+        if (resource) {
+            const found = s.resources.find((r) => r.id === resource.id)
+            if (!found) {
+                return undefined
+            }
+            switch (resource.field) {
+                case 'type':
+                    return found.type
+                case 'displayName':
+                    return found.displayName
+                case 'slug':
+                    return found.slug
+                case 'url':
+                    return found.url ?? ''
+            }
+        }
+        return undefined
+    }
+
+    /**
+     * Rejecting (not resolving) on failure is load-bearing: a fulfilled
+     * promise tells the framework the write landed, and the pane would keep
+     * showing a value that was never stored.
+     */
+    override async setControlValue(key: string, value: unknown): Promise<void> {
+        const write = async (mutator: Parameters<ArdServerPlugin['updateSettings']>[0]) => {
+            await this.plugin.updateSettings(mutator)
+        }
+        switch (key) {
+            case 'server.port': {
+                const port = typeof value === 'number' ? value : Number.NaN
+                if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+                    throw new Error('Port must be an integer between 1024 and 65535.')
+                }
+                await write((draft) => {
+                    draft.server.port = port
+                })
+                return
+            }
+            case 'publisher':
+                // Empty collapses to the historical default rather than an
+                // empty URN segment — same behavior as the imperative tab.
+                await write((draft) => {
+                    draft.publisher = ArdServerSettingTab.asString(value).trim() || 'obsidian'
+                })
+                return
+            case 'catalogDisplayName':
+                await write((draft) => {
+                    draft.catalogDisplayName = ArdServerSettingTab.asString(value)
+                })
+                return
+            case 'watchSkillFolders':
+                await write((draft) => {
+                    draft.watchSkillFolders = value === true
+                })
+                return
+            case 'searchBackend.kind': {
+                const kind = SEARCH_BACKEND_KINDS.find((k) => k === value)
+                if (!kind) {
+                    throw new Error(`Unknown search backend "${String(value)}".`)
+                }
+                await write((draft) => {
+                    draft.searchBackend.kind = kind
+                })
+                // Backend choice changes which rows are visible.
+                this.update()
+                return
+            }
+            case 'searchBackend.embeddingServerUrl':
+                await write((draft) => {
+                    draft.searchBackend.embeddingServerUrl =
+                        ArdServerSettingTab.asString(value).trim() || 'http://localhost:11434/v1'
+                })
+                return
+            case 'searchBackend.embeddingModel':
+                await write((draft) => {
+                    draft.searchBackend.embeddingModel =
+                        ArdServerSettingTab.asString(value).trim() || 'nomic-embed-text'
+                })
+                return
+            case 'searchBackend.apiProvider': {
+                const provider = HOSTED_EMBEDDING_PROVIDERS.find((p) => p === value)
+                if (!provider) {
+                    throw new Error(`Unknown embedding provider "${String(value)}".`)
+                }
+                await write((draft) => {
+                    draft.searchBackend.apiProvider = provider
+                })
+                // Provider choice toggles the custom base-URL row + warning.
+                this.update()
+                return
+            }
+            case 'searchBackend.apiBaseUrl':
+                await write((draft) => {
+                    draft.searchBackend.apiBaseUrl =
+                        ArdServerSettingTab.asString(value).trim() || undefined
+                })
+                this.update() // the missing-URL warning depends on this value
+                return
+            case 'searchBackend.apiModel':
+                await write((draft) => {
+                    draft.searchBackend.apiModel =
+                        ArdServerSettingTab.asString(value).trim() || undefined
+                })
+                return
+        }
+        const resource = this.parseResourceKey(key)
+        if (resource) {
+            await this.setResourceValue(resource.id, resource.field, value)
+            return
+        }
+        new Notice('Agentic resource discovery: failed to save settings.')
+        throw new Error(`Setting "${key}" does not address a known field.`)
+    }
+
+    private parseResourceKey(key: string): { id: string; field: string } | null {
+        const match = /^resource\.([^.]+)\.(type|displayName|slug|url)$/.exec(key)
+        return match ? { id: match[1]!, field: match[2]! } : null
+    }
+
+    private async setResourceValue(id: string, field: string, value: unknown): Promise<void> {
+        let found = false
+        await this.plugin.updateSettings((draft) => {
+            const target = draft.resources.find((r) => r.id === id)
+            if (!target) {
+                return
+            }
+            found = true
+            switch (field) {
+                case 'type': {
+                    const type = MANUAL_RESOURCE_TYPES.find((t) => t === value)
+                    if (type) {
+                        target.type = type
+                    }
+                    break
+                }
+                case 'displayName':
+                    target.displayName = ArdServerSettingTab.asString(value)
+                    break
+                case 'slug':
+                    target.slug = ArdServerSettingTab.asString(value)
+                    break
+                case 'url':
+                    target.url = ArdServerSettingTab.asString(value).trim() || undefined
+                    break
+            }
+        })
+        if (!found) {
+            throw new Error(`Resource "${id}" no longer exists.`)
+        }
+        if (field === 'displayName') {
+            this.update() // the list entry title mirrors the display name
+        }
     }
 
     // ----- Section 0: Status -----
 
-    /**
-     * Read-only view of what the registry is doing right now. Rendered from live
-     * controller state on every `display()`, so reopening the tab (or a
-     * background rescan, which re-displays it) refreshes it.
-     */
-    private renderStatusSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Status').setHeading()
+    private statusGroup(): SettingDefinitionItem {
+        return {
+            type: 'group',
+            heading: 'Status',
+            items: [
+                {
+                    name: 'Status',
+                    // Live registry state, not a setting — keep it out of search.
+                    searchable: false,
+                    render: (setting): void => {
+                        setting.settingEl.addClass('ard-settings-embed')
+                        setting.infoEl.remove()
+                        this.renderStatusGrid(setting.settingEl)
+                    }
+                },
+                {
+                    name: 'Client setup',
+                    desc: 'Copy a ready-to-paste MCP server config, or a curl call to try the API.',
+                    render: (setting): void => {
+                        this.addClientSetupButtons(setting)
+                    }
+                }
+            ]
+        }
+    }
 
+    private renderStatusGrid(containerEl: HTMLElement): void {
         const registry = this.plugin.registry
         const port = registry.port ?? this.plugin.settings.server.port
         const grid = containerEl.createDiv({ cls: 'ard-status' })
@@ -119,10 +349,11 @@ export class ArdServerSettingTab extends PluginSettingTab {
 
         this.addStatusRow(grid, 'MCP endpoint', mcpEndpointUrl(port), { mono: true })
         this.addStatusRow(grid, 'MCP tools', MCP_TOOL_NAMES.join(', '))
+    }
 
-        new Setting(containerEl)
-            .setName('Client setup')
-            .setDesc('Copy a ready-to-paste MCP server config, or a curl call to try the API.')
+    private addClientSetupButtons(setting: Setting): void {
+        const port = this.plugin.registry.port ?? this.plugin.settings.server.port
+        setting
             .addButton((button) =>
                 button
                     .setButtonText('Copy MCP config')
@@ -179,33 +410,54 @@ export class ArdServerSettingTab extends PluginSettingTab {
 
     // ----- Section 1: Server -----
 
-    private renderServerSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Server').setHeading()
-
-        new Setting(containerEl)
-            .setName('Port')
-            .setDesc('The registry listens on 127.0.0.1 at this port (loopback only).')
-            .addText((text) =>
-                text
-                    .setPlaceholder('27182')
-                    .setValue(String(this.plugin.settings.server.port))
-                    .onChange(async (value) => {
-                        const port = Number.parseInt(value, 10)
-                        const valid = Number.isInteger(port) && port >= 1024 && port <= 65535
-                        // Flag out-of-range input instead of silently ignoring it.
-                        text.inputEl.toggleClass('ard-invalid', !valid && value.trim() !== '')
-                        if (!valid) {
-                            return
+    private serverGroup(): SettingDefinitionItem {
+        return {
+            type: 'group',
+            heading: 'Server',
+            items: [
+                {
+                    name: 'Port',
+                    desc: 'The registry listens on 127.0.0.1 at this port (loopback only).',
+                    control: {
+                        type: 'number',
+                        key: 'server.port',
+                        placeholder: '27182',
+                        min: 1024,
+                        max: 65535,
+                        step: 1,
+                        // No defaultValue on purpose: a cleared field must be
+                        // refused here, not silently reset by the framework.
+                        validate: (value): string | void => {
+                            if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+                                return 'Enter a port between 1024 and 65535.'
+                            }
                         }
-                        await this.plugin.updateSettings((draft) => {
-                            draft.server.port = port
-                        })
-                    })
-            )
+                    }
+                },
+                {
+                    name: 'Bearer token',
+                    desc: 'Required on every request except the public catalog. Keep it secret.',
+                    searchable: true,
+                    render: (setting): void => {
+                        this.renderBearerTokenControls(setting)
+                    }
+                },
+                {
+                    name: 'Publisher',
+                    desc: 'URN publisher segment (urn:air:<publisher>:…). Use a real domain to publish.',
+                    control: { type: 'text', key: 'publisher', placeholder: 'obsidian' }
+                },
+                {
+                    name: 'Catalog name',
+                    desc: 'Human-readable name for this catalog, shown in the served ai-catalog.json.',
+                    control: { type: 'text', key: 'catalogDisplayName' }
+                }
+            ]
+        }
+    }
 
-        new Setting(containerEl)
-            .setName('Bearer token')
-            .setDesc('Required on every request except the public catalog. Keep it secret.')
+    private renderBearerTokenControls(setting: Setting): void {
+        setting
             .addText((text) => {
                 text.inputEl.type = 'password'
                 text.setValue(this.plugin.settings.server.bearerToken)
@@ -230,369 +482,383 @@ export class ArdServerSettingTab extends PluginSettingTab {
                         await this.plugin.updateSettings((draft) => {
                             draft.server.bearerToken = generateBearerToken()
                         })
-                        this.display()
+                        this.update()
                     })
-            )
-
-        new Setting(containerEl)
-            .setName('Publisher')
-            .setDesc('URN publisher segment (urn:air:<publisher>:…). Use a real domain to publish.')
-            .addText((text) =>
-                text
-                    .setPlaceholder('obsidian')
-                    .setValue(this.plugin.settings.publisher)
-                    .onChange(async (value) => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.publisher = value.trim() || 'obsidian'
-                        })
-                    })
-            )
-
-        new Setting(containerEl)
-            .setName('Catalog name')
-            .setDesc('Human-readable name for this catalog, shown in the served ai-catalog.json.')
-            .addText((text) =>
-                text.setValue(this.plugin.settings.catalogDisplayName).onChange(async (value) => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.catalogDisplayName = value
-                    })
-                })
             )
     }
 
     // ----- Section 2: Skill folders -----
 
-    private renderSkillFoldersSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Skill folders').setHeading()
-
+    private skillFoldersIntroGroup(): SettingDefinitionItem {
         const stats = this.plugin.settings.lastScanStats
         const lastScan = stats.lastScanAt
             ? `Last scan: ${stats.skillCount} skills, ${stats.errorCount} errors (${stats.lastScanAt}).`
             : 'Not scanned yet.'
-        new Setting(containerEl).setDesc(
-            `Folders scanned for SKILL.md files at startup (may live outside the vault). ${lastScan}`
-        )
+        return {
+            type: 'group',
+            heading: 'Skill folders',
+            items: [
+                {
+                    name: 'About skill folders',
+                    desc: `Folders scanned for SKILL.md files at startup (may live outside the vault). ${lastScan}`,
+                    // Explanatory copy, not a setting — keep it out of search.
+                    searchable: false
+                }
+            ]
+        }
+    }
 
-        this.plugin.settings.skillFolders.forEach((folder, index) => {
-            new Setting(containerEl)
-                .addText((text) => {
-                    text.setPlaceholder('Pick a vault folder or type an absolute path')
-                        .setValue(folder)
-                        .onChange(async (value) => {
-                            await this.plugin.updateSettings((draft) => {
-                                draft.skillFolders[index] = value
+    private skillFoldersList(): SettingDefinitionItem {
+        const folderItems: SettingGroupItem[] = this.plugin.settings.skillFolders.map(
+            (folder, index): SettingGroupItem => ({
+                name: folder || `Folder ${index + 1}`,
+                searchable: false,
+                render: (setting): void => {
+                    setting.infoEl.remove()
+                    setting.addText((text) => {
+                        text.setPlaceholder('Pick a vault folder or type an absolute path')
+                            .setValue(this.plugin.settings.skillFolders[index] ?? '')
+                            .onChange(async (value) => {
+                                await this.plugin.updateSettings((draft) => {
+                                    draft.skillFolders[index] = value
+                                })
                             })
-                        })
-                    // Reuse the shared folder autocomplete (vault folders).
-                    new FolderSuggest(text.inputEl, this.app)
-                })
-                .addExtraButton((button) =>
-                    button
-                        .setIcon('trash')
-                        .setTooltip('Remove folder')
-                        .onClick(async () => {
-                            await this.plugin.updateSettings((draft) => {
-                                draft.skillFolders.splice(index, 1)
-                            })
-                            this.display()
-                        })
-                )
-        })
-
-        new Setting(containerEl)
-            .setName('Watch folders for changes')
-            .setDesc(
-                'Automatically rescan when a SKILL.md changes. Off by default; best-effort — may ' +
-                    'not fire on network/cloud-synced (e.g. Google Drive) folders. Use Rescan if unsure.'
-            )
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.watchSkillFolders).onChange(async (value) => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.watchSkillFolders = value
+                        // Reuse the shared folder autocomplete (vault folders).
+                        new FolderSuggest(text.inputEl, this.app)
                     })
-                })
-            )
-
-        new Setting(containerEl)
-            .addButton((button) =>
-                button
-                    .setButtonText('Add folder')
-                    .setCta()
-                    .onClick(async () => {
-                        await this.plugin.updateSettings((draft) => {
+                }
+            })
+        )
+        return {
+            type: 'list',
+            heading: 'Folders',
+            emptyState: 'No folders yet. Add one to start serving skills.',
+            items: folderItems,
+            // LIVE index by framework contract: rows re-index on delete
+            // immediately, so resolving from a render-time snapshot would
+            // delete the wrong folder.
+            onDelete: (index): void => {
+                void this.plugin
+                    .updateSettings((draft) => {
+                        draft.skillFolders.splice(index, 1)
+                    })
+                    .then(() => {
+                        this.update()
+                    })
+            },
+            addItem: {
+                name: 'Add folder',
+                action: (): void => {
+                    void this.plugin
+                        .updateSettings((draft) => {
                             draft.skillFolders.push('')
                         })
-                        this.display()
-                    })
-            )
-            .addButton((button) =>
-                button
-                    .setButtonText('Rescan skills now')
-                    .setTooltip('Re-scan the configured folders and rebuild the catalog')
-                    .onClick(async () => {
-                        button.setButtonText('Scanning…').setDisabled(true)
-                        await this.plugin.rescanSkills()
-                        // rescanSkills() refreshes this tab itself; just notify.
-                        new Notice(
-                            `Scanned ${this.plugin.settings.lastScanStats.skillCount} skills`
+                        .then(() => {
+                            this.update()
+                        })
+                }
+            }
+        }
+    }
+
+    private skillFoldersOptionsGroup(): SettingDefinitionItem {
+        return {
+            type: 'group',
+            items: [
+                {
+                    name: 'Watch folders for changes',
+                    desc:
+                        'Automatically rescan when a SKILL.md changes. Off by default; best-effort — may ' +
+                        'not fire on network/cloud-synced (e.g. Google Drive) folders. Use Rescan if unsure.',
+                    control: { type: 'toggle', key: 'watchSkillFolders' }
+                },
+                {
+                    name: 'Rescan skills now',
+                    desc: 'Re-scan the configured folders and rebuild the catalog.',
+                    render: (setting): void => {
+                        setting.addButton((button) =>
+                            button.setButtonText('Rescan skills now').onClick(async () => {
+                                button.setButtonText('Scanning…').setDisabled(true)
+                                await this.plugin.rescanSkills()
+                                // rescanSkills() refreshes this tab itself; just notify.
+                                new Notice(
+                                    `Scanned ${this.plugin.settings.lastScanStats.skillCount} skills`
+                                )
+                            })
                         )
-                    })
-            )
+                    }
+                }
+            ]
+        }
     }
 
     // ----- Section 3: Additional resources -----
 
-    private renderResourcesSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Additional resources').setHeading()
-        new Setting(containerEl).setDesc(
-            'MCP servers, A2A agents, nested catalogs, and registries to include in the catalog.'
-        )
-
-        this.plugin.settings.resources.forEach((resource, index) => {
-            this.renderResourceRow(containerEl, resource, index)
-        })
-
-        new Setting(containerEl).addButton((button) =>
-            button.setButtonText('Add resource').onClick(async () => {
-                await this.plugin.updateSettings((draft) => {
-                    draft.resources.push({
-                        id: crypto.randomUUID(),
-                        enabled: true,
-                        type: 'application/mcp-server-card+json',
-                        slug: '',
-                        displayName: '',
-                        capabilities: [],
-                        tags: [],
-                        representativeQueries: []
-                    })
-                })
-                this.display()
-            })
-        )
+    private resourcesIntroGroup(): SettingDefinitionItem {
+        return {
+            type: 'group',
+            heading: 'Additional resources',
+            items: [
+                {
+                    name: 'About additional resources',
+                    desc: 'MCP servers, A2A agents, nested catalogs, and registries to include in the catalog.',
+                    searchable: false
+                }
+            ]
+        }
     }
 
-    private renderResourceRow(
-        containerEl: HTMLElement,
-        resource: ManualResource,
-        index: number
-    ): void {
-        new Setting(containerEl)
-            .setName(resource.displayName || '(unnamed resource)')
-            .addDropdown((dropdown) => {
-                for (const type of MANUAL_RESOURCE_TYPES) {
-                    dropdown.addOption(type, RESOURCE_TYPE_LABELS[type])
-                }
-                dropdown.setValue(resource.type).onChange(async (value) => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.resources[index]!.type = value as ManualResource['type']
+    private resourcesList(): SettingDefinitionItem {
+        const resourceItems: SettingGroupItem[] = this.plugin.settings.resources.map((resource) =>
+            this.resourcePage(resource)
+        )
+        return {
+            type: 'list',
+            heading: 'Resources',
+            emptyState: 'No resources yet. Add one to include it in the catalog.',
+            items: resourceItems,
+            onDelete: (index): void => {
+                // LIVE index by framework contract (see skillFoldersGroup).
+                void this.plugin
+                    .updateSettings((draft) => {
+                        draft.resources.splice(index, 1)
                     })
-                })
-            })
-            .addExtraButton((button) =>
-                button
-                    .setIcon('trash')
-                    .setTooltip('Remove resource')
-                    .onClick(async () => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.resources.splice(index, 1)
+                    .then(() => {
+                        this.update()
+                    })
+            },
+            addItem: {
+                name: 'Add resource',
+                action: (): void => {
+                    void this.plugin
+                        .updateSettings((draft) => {
+                            draft.resources.push({
+                                id: crypto.randomUUID(),
+                                enabled: true,
+                                type: 'application/mcp-server-card+json',
+                                slug: '',
+                                displayName: '',
+                                capabilities: [],
+                                tags: [],
+                                representativeQueries: []
+                            })
                         })
-                        this.display()
-                    })
-            )
+                        .then(() => {
+                            this.update()
+                        })
+                }
+            }
+        }
+    }
 
-        new Setting(containerEl).setName('Display name').addText((text) =>
-            text.setValue(resource.displayName).onChange(async (value) => {
-                await this.plugin.updateSettings((draft) => {
-                    draft.resources[index]!.displayName = value
-                })
-            })
-        )
-
-        new Setting(containerEl)
-            .setName('Slug')
-            .setDesc('URN terminal segment.')
-            .addText((text) =>
-                text.setValue(resource.slug).onChange(async (value) => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.resources[index]!.slug = value
-                    })
-                })
-            )
-
-        new Setting(containerEl).setName('URL').addText((text) =>
-            text.setValue(resource.url ?? '').onChange(async (value) => {
-                await this.plugin.updateSettings((draft) => {
-                    draft.resources[index]!.url = value || undefined
-                })
-            })
-        )
+    /**
+     * One navigable sub-page per resource. Value keys use the resource's
+     * stable `id`, never its index (see class docs).
+     */
+    private resourcePage(resource: ManualResource): SettingGroupItem {
+        const id = resource.id
+        return {
+            type: 'page',
+            name: resource.displayName || '(unnamed resource)',
+            displayValue: (): string => {
+                const current = this.plugin.settings.resources.find((r) => r.id === id)
+                return current ? RESOURCE_TYPE_LABELS[current.type] : ''
+            },
+            items: [
+                {
+                    name: 'Type',
+                    control: {
+                        type: 'dropdown',
+                        key: `resource.${id}.type`,
+                        options: RESOURCE_TYPE_LABELS
+                    }
+                },
+                {
+                    name: 'Display name',
+                    control: { type: 'text', key: `resource.${id}.displayName` }
+                },
+                {
+                    name: 'Slug',
+                    desc: 'URN terminal segment.',
+                    control: { type: 'text', key: `resource.${id}.slug` }
+                },
+                {
+                    name: 'URL',
+                    control: { type: 'text', key: `resource.${id}.url` }
+                }
+            ]
+        }
     }
 
     // ----- Section 4: Search backend -----
 
-    private renderSearchBackendSection(containerEl: HTMLElement): void {
-        new Setting(containerEl).setName('Search backend').setHeading()
-
-        new Setting(containerEl)
-            .setName('Backend')
-            .setDesc('Powers POST /search ranking. The built-in lexical backend needs no download.')
-            .addDropdown((dropdown) => {
-                for (const kind of SEARCH_BACKEND_KINDS) {
-                    dropdown.addOption(kind, BACKEND_LABELS[kind])
+    private searchBackendGroup(): SettingDefinitionItem {
+        const isLocal = (): boolean => this.plugin.settings.searchBackend.kind === 'local-model'
+        const isHosted = (): boolean => this.plugin.settings.searchBackend.kind === 'hosted-api'
+        const isCustom = (): boolean =>
+            isHosted() && this.plugin.settings.searchBackend.apiProvider === 'custom'
+        return {
+            type: 'group',
+            heading: 'Search backend',
+            items: [
+                {
+                    name: 'Backend',
+                    desc: 'Powers POST /search ranking. The built-in lexical backend needs no download.',
+                    control: {
+                        type: 'dropdown',
+                        key: 'searchBackend.kind',
+                        options: BACKEND_LABELS
+                    }
+                },
+                {
+                    name: 'Local embedding server',
+                    desc:
+                        'Hybrid search: lexical BM25 fused with dense embeddings from a local ' +
+                        'OpenAI-compatible embedding server you already run (Ollama, LM Studio, ' +
+                        'llama.cpp, …). Nothing is downloaded by the plugin. If the server is ' +
+                        'unreachable, searches fall back to the built-in lexical backend ' +
+                        'automatically. Changing these restarts the registry.',
+                    searchable: false,
+                    visible: isLocal
+                },
+                {
+                    name: 'Embedding server URL',
+                    desc: 'OpenAI-compatible base or /embeddings URL.',
+                    visible: isLocal,
+                    control: {
+                        type: 'text',
+                        key: 'searchBackend.embeddingServerUrl',
+                        placeholder: 'http://localhost:11434/v1'
+                    }
+                },
+                {
+                    name: 'Embedding model',
+                    desc: 'Model name the server should use.',
+                    visible: isLocal,
+                    control: {
+                        type: 'text',
+                        key: 'searchBackend.embeddingModel',
+                        placeholder: 'nomic-embed-text'
+                    }
+                },
+                {
+                    name: 'Hosted embedding API',
+                    desc:
+                        'Hybrid search using a remote OpenAI-compatible embedding API (bring your ' +
+                        'own key). The query and your skill metadata (names, descriptions, tags) ' +
+                        'are sent to the provider to embed. Unreachable or unauthorized requests ' +
+                        'fall back to lexical automatically. Changing these restarts the registry.',
+                    searchable: false,
+                    visible: isHosted
+                },
+                {
+                    name: 'Provider',
+                    desc: 'OpenAI-compatible embedding provider, or custom for any other gateway.',
+                    visible: isHosted,
+                    control: {
+                        type: 'dropdown',
+                        key: 'searchBackend.apiProvider',
+                        options: Object.fromEntries(HOSTED_EMBEDDING_PROVIDERS.map((p) => [p, p]))
+                    }
+                },
+                {
+                    name: 'API base URL',
+                    desc: 'OpenAI-compatible base or /embeddings URL.',
+                    visible: isCustom,
+                    control: {
+                        type: 'text',
+                        key: 'searchBackend.apiBaseUrl',
+                        placeholder: 'https://api.example.com/v1'
+                    }
+                },
+                {
+                    name: 'Base URL required',
+                    searchable: false,
+                    visible: (): boolean =>
+                        isCustom() && !this.plugin.settings.searchBackend.apiBaseUrl?.trim(),
+                    render: (setting): void => {
+                        setting.settingEl.addClass('ard-settings-embed')
+                        setting.infoEl.remove()
+                        setting.settingEl
+                            .createEl('p', {
+                                cls: 'ard-setting-warning',
+                                text: 'A base URL is required for the custom provider — search stays lexical until it is set.'
+                            })
+                            .setAttr('role', 'alert')
+                    }
+                },
+                {
+                    name: 'Model',
+                    desc: 'Embedding model name (leave blank to use the provider default).',
+                    visible: isHosted,
+                    control: {
+                        type: 'text',
+                        key: 'searchBackend.apiModel',
+                        placeholder: 'text-embedding-3-small'
+                    }
+                },
+                {
+                    name: 'API key',
+                    desc: 'Sent as a Bearer token. Stored in plugin data — treat it as a secret.',
+                    visible: isHosted,
+                    // No password control type exists; render a masked input.
+                    render: (setting): void => {
+                        setting.addText((text) => {
+                            text.inputEl.type = 'password'
+                            text.setPlaceholder('sk-…')
+                                .setValue(this.plugin.settings.searchBackend.apiKey ?? '')
+                                .onChange(async (value) => {
+                                    await this.plugin.updateSettings((draft) => {
+                                        draft.searchBackend.apiKey = value.trim() || undefined
+                                    })
+                                })
+                        })
+                    }
+                },
+                {
+                    name: 'Reindex',
+                    desc: 'Rebuild the search index over the current catalog without rescanning folders.',
+                    render: (setting): void => {
+                        setting.addButton((button) =>
+                            button
+                                .setButtonText('Reindex')
+                                .setTooltip('Re-run the search backend over the current catalog')
+                                .onClick(async () => {
+                                    button.setButtonText('Reindexing…').setDisabled(true)
+                                    await this.plugin.reindex()
+                                    button.setButtonText('Reindex').setDisabled(false)
+                                    new Notice('Search index rebuilt')
+                                })
+                        )
+                    }
                 }
-                dropdown
-                    .setValue(this.plugin.settings.searchBackend.kind)
-                    .onChange(async (value) => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.searchBackend.kind = value as SearchBackendConfig['kind']
-                        })
-                        this.display()
-                    })
-            })
-
-        const kind = this.plugin.settings.searchBackend.kind
-        if (kind === 'local-model') {
-            new Setting(containerEl).setDesc(
-                'Hybrid search: lexical BM25 fused with dense embeddings from a local OpenAI-compatible embedding server you already run (Ollama, LM Studio, llama.cpp, …). Nothing is downloaded by the plugin. If the server is unreachable, searches fall back to the built-in lexical backend automatically. Changing these restarts the registry.'
-            )
-            new Setting(containerEl)
-                .setName('Embedding server URL')
-                .setDesc('OpenAI-compatible base or /embeddings URL.')
-                .addText((text) =>
-                    text
-                        .setPlaceholder('http://localhost:11434/v1')
-                        .setValue(this.plugin.settings.searchBackend.embeddingServerUrl)
-                        .onChange(async (value) => {
-                            await this.plugin.updateSettings((draft) => {
-                                draft.searchBackend.embeddingServerUrl =
-                                    value.trim() || 'http://localhost:11434/v1'
-                            })
-                        })
-                )
-            new Setting(containerEl)
-                .setName('Embedding model')
-                .setDesc('Model name the server should use.')
-                .addText((text) =>
-                    text
-                        .setPlaceholder('nomic-embed-text')
-                        .setValue(this.plugin.settings.searchBackend.embeddingModel)
-                        .onChange(async (value) => {
-                            await this.plugin.updateSettings((draft) => {
-                                draft.searchBackend.embeddingModel =
-                                    value.trim() || 'nomic-embed-text'
-                            })
-                        })
-                )
-        } else if (kind === 'hosted-api') {
-            this.renderHostedApiOptions(containerEl)
+            ]
         }
-
-        new Setting(containerEl)
-            .setName('Reindex')
-            .setDesc(
-                'Rebuild the search index over the current catalog without rescanning folders.'
-            )
-            .addButton((button) =>
-                button
-                    .setButtonText('Reindex')
-                    .setTooltip('Re-run the search backend over the current catalog')
-                    .onClick(async () => {
-                        button.setButtonText('Reindexing…').setDisabled(true)
-                        await this.plugin.reindex()
-                        button.setButtonText('Reindex').setDisabled(false)
-                        new Notice('Search index rebuilt')
-                    })
-            )
-    }
-
-    /** Provider / base URL / model / key inputs for the hosted-api backend. */
-    private renderHostedApiOptions(containerEl: HTMLElement): void {
-        new Setting(containerEl).setDesc(
-            'Hybrid search using a remote OpenAI-compatible embedding API (bring your own key). The query and your skill metadata (names, descriptions, tags) are sent to the provider to embed. Unreachable or unauthorized requests fall back to lexical automatically. Changing these restarts the registry.'
-        )
-
-        const backend = this.plugin.settings.searchBackend
-        new Setting(containerEl)
-            .setName('Provider')
-            .setDesc('OpenAI-compatible embedding provider, or custom for any other gateway.')
-            .addDropdown((dropdown) => {
-                for (const provider of HOSTED_EMBEDDING_PROVIDERS) {
-                    dropdown.addOption(provider, provider)
-                }
-                dropdown.setValue(backend.apiProvider).onChange(async (value) => {
-                    await this.plugin.updateSettings((draft) => {
-                        draft.searchBackend.apiProvider =
-                            value as SearchBackendConfig['apiProvider']
-                    })
-                    this.display()
-                })
-            })
-
-        if (backend.apiProvider === 'custom') {
-            new Setting(containerEl)
-                .setName('API base URL')
-                .setDesc('OpenAI-compatible base or /embeddings URL.')
-                .addText((text) =>
-                    text
-                        .setPlaceholder('https://api.example.com/v1')
-                        .setValue(backend.apiBaseUrl ?? '')
-                        .onChange(async (value) => {
-                            await this.plugin.updateSettings((draft) => {
-                                draft.searchBackend.apiBaseUrl = value.trim() || undefined
-                            })
-                            this.display()
-                        })
-                )
-            if (!backend.apiBaseUrl?.trim()) {
-                containerEl
-                    .createEl('p', {
-                        cls: 'ard-setting-warning',
-                        text: 'A base URL is required for the custom provider — search stays lexical until it is set.'
-                    })
-                    .setAttr('role', 'alert')
-            }
-        }
-
-        new Setting(containerEl)
-            .setName('Model')
-            .setDesc('Embedding model name (leave blank to use the provider default).')
-            .addText((text) =>
-                text
-                    .setPlaceholder('text-embedding-3-small')
-                    .setValue(backend.apiModel ?? '')
-                    .onChange(async (value) => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.searchBackend.apiModel = value.trim() || undefined
-                        })
-                    })
-            )
-
-        new Setting(containerEl)
-            .setName('API key')
-            .setDesc('Sent as a Bearer token. Stored in plugin data — treat it as a secret.')
-            .addText((text) => {
-                text.inputEl.type = 'password'
-                text.setPlaceholder('sk-…')
-                    .setValue(backend.apiKey ?? '')
-                    .onChange(async (value) => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.searchBackend.apiKey = value.trim() || undefined
-                        })
-                    })
-            })
     }
 
     // ----- Section 5: Support -----
 
-    private renderSupportSection(containerEl: HTMLElement): void {
-        renderSharedSupportSection(containerEl, (el) => {
-            const linkEl = el.createEl('a', {
-                href: BUY_ME_A_COFFEE_URL
-            })
-            const imgEl = linkEl.createEl('img')
-            imgEl.src = BUY_ME_A_COFFEE_BADGE_DATA_URL
-            imgEl.alt = 'Buy me a coffee'
-            imgEl.width = 175
-        })
+    private supportGroup(): SettingDefinitionItem {
+        return {
+            type: 'group',
+            // No heading: renderSharedSupportSection draws its own.
+            items: [
+                {
+                    name: 'Support',
+                    searchable: false,
+                    render: (setting): void => {
+                        setting.settingEl.addClass('ard-settings-embed')
+                        setting.infoEl.remove()
+                        renderSharedSupportSection(setting.settingEl, (el) => {
+                            const linkEl = el.createEl('a', { href: BUY_ME_A_COFFEE_URL })
+                            const imgEl = linkEl.createEl('img')
+                            imgEl.src = BUY_ME_A_COFFEE_BADGE_DATA_URL
+                            imgEl.alt = 'Buy me a coffee'
+                            imgEl.width = 175
+                        })
+                    }
+                }
+            ]
+        }
     }
 }

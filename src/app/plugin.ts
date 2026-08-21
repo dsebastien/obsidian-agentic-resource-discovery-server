@@ -30,7 +30,7 @@ export class ArdServerPlugin extends Plugin {
     /** Settings are kept immutable; mutate only via {@link updateSettings}. */
     // No `override`: `Plugin.settings` only exists in API 1.13+ typings and the
     // plugin supports older public releases.
-    settings: PluginSettings = DEFAULT_SETTINGS
+    override settings: PluginSettings = DEFAULT_SETTINGS
 
     /** How often to retry a failed embedding build (e.g. server started late). */
     private static readonly EMBEDDING_RETRY_INTERVAL_MS = 30_000
@@ -158,7 +158,7 @@ export class ArdServerPlugin extends Plugin {
         await this.saveSettings()
         // Refresh the settings tab so its scan stats update even when the
         // rescan was triggered in the background (watcher), not by the button.
-        this.settingTab?.display()
+        this.settingTab?.update()
     }
 
     /**
