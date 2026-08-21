@@ -180,11 +180,16 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     draft.catalogDisplayName = ArdServerSettingTab.asString(value)
                 })
                 return
-            case 'watchSkillFolders':
+            case 'watchSkillFolders': {
+                if (typeof value !== 'boolean') {
+                    throw new Error('Expected a boolean value.')
+                }
+                const watch = value
                 await write((draft) => {
-                    draft.watchSkillFolders = value === true
+                    draft.watchSkillFolders = watch
                 })
                 return
+            }
             case 'searchBackend.kind': {
                 const kind = SEARCH_BACKEND_KINDS.find((k) => k === value)
                 if (!kind) {
@@ -245,12 +250,15 @@ export class ArdServerSettingTab extends PluginSettingTab {
     }
 
     private parseResourceKey(key: string): { id: string; field: string } | null {
-        const match = /^resource\.([^.]+)\.(type|displayName|slug|url)$/.exec(key)
+        // Greedy id match: ids are plain strings in the schema (historical data
+        // may contain dots), so only the trailing field name is structural.
+        const match = /^resource\.(.+)\.(type|displayName|slug|url)$/.exec(key)
         return match ? { id: match[1]!, field: match[2]! } : null
     }
 
     private async setResourceValue(id: string, field: string, value: unknown): Promise<void> {
         let found = false
+        let badValue = false
         await this.plugin.updateSettings((draft) => {
             const target = draft.resources.find((r) => r.id === id)
             if (!target) {
@@ -260,9 +268,13 @@ export class ArdServerSettingTab extends PluginSettingTab {
             switch (field) {
                 case 'type': {
                     const type = MANUAL_RESOURCE_TYPES.find((t) => t === value)
-                    if (type) {
-                        target.type = type
+                    if (!type) {
+                        // Throwing from inside the immer mutator would abort the
+                        // whole update; flag it and reject after the write call.
+                        badValue = true
+                        return
                     }
+                    target.type = type
                     break
                 }
                 case 'displayName':
@@ -279,8 +291,15 @@ export class ArdServerSettingTab extends PluginSettingTab {
         if (!found) {
             throw new Error(`Resource "${id}" no longer exists.`)
         }
-        if (field === 'displayName') {
-            this.update() // the list entry title mirrors the display name
+        if (badValue) {
+            throw new Error(`Invalid value for resource ${field}.`)
+        }
+        // Deliberately NO update() on displayName: the page's name is its
+        // navigation identity, and re-reading definitions mid-keystroke
+        // renames the page under the user and blanks it. The entry title
+        // catches up on the next natural re-render.
+        if (field === 'type') {
+            this.update() // the entry's displayValue mirrors the type
         }
     }
 
@@ -516,12 +535,28 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 render: (setting): void => {
                     setting.infoEl.remove()
                     setting.addText((text) => {
+                        // Folders have no stable id, so this row captures its
+                        // index — and a deletion above it shifts the array
+                        // before the re-render lands. Track the value the row
+                        // last saw and refuse a write when the slot no longer
+                        // holds it (then re-render to heal).
+                        let lastSeen = this.plugin.settings.skillFolders[index] ?? ''
                         text.setPlaceholder('Pick a vault folder or type an absolute path')
-                            .setValue(this.plugin.settings.skillFolders[index] ?? '')
+                            .setValue(lastSeen)
                             .onChange(async (value) => {
+                                let stale = false
                                 await this.plugin.updateSettings((draft) => {
+                                    if (draft.skillFolders[index] !== lastSeen) {
+                                        stale = true
+                                        return
+                                    }
                                     draft.skillFolders[index] = value
                                 })
+                                if (stale) {
+                                    this.update()
+                                    return
+                                }
+                                lastSeen = value
                             })
                         // Reuse the shared folder autocomplete (vault folders).
                         new FolderSuggest(text.inputEl, this.app)
@@ -609,9 +644,16 @@ export class ArdServerSettingTab extends PluginSettingTab {
     }
 
     private resourcesList(): SettingDefinitionItem {
-        const resourceItems: SettingGroupItem[] = this.plugin.settings.resources.map((resource) =>
-            this.resourcePage(resource)
-        )
+        // Page names are the framework's navigation identity: two pages with
+        // the same name resolve to the FIRST definition, so edits and removal
+        // on the second would silently target the first. Deduplicate visibly.
+        const seen = new Map<string, number>()
+        const resourceItems: SettingGroupItem[] = this.plugin.settings.resources.map((resource) => {
+            const base = resource.displayName || '(unnamed resource)'
+            const count = (seen.get(base) ?? 0) + 1
+            seen.set(base, count)
+            return this.resourcePage(resource, count > 1 ? `${base} (${count})` : base)
+        })
         return {
             type: 'list',
             heading: 'Resources',
@@ -645,11 +687,11 @@ export class ArdServerSettingTab extends PluginSettingTab {
      * One navigable sub-page per resource. Value keys use the resource's
      * stable `id`, never its index (see class docs).
      */
-    private resourcePage(resource: ManualResource): SettingGroupItem {
+    private resourcePage(resource: ManualResource, pageName: string): SettingGroupItem {
         const id = resource.id
         return {
             type: 'page',
-            name: resource.displayName || '(unnamed resource)',
+            name: pageName,
             displayValue: (): string => {
                 const current = this.plugin.settings.resources.find((r) => r.id === id)
                 return current ? RESOURCE_TYPE_LABELS[current.type] : ''
