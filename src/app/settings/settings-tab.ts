@@ -617,16 +617,6 @@ export class ArdServerSettingTab extends PluginSettingTab {
             heading: 'Resources',
             emptyState: 'No resources yet. Add one to include it in the catalog.',
             items: resourceItems,
-            onDelete: (index): void => {
-                // LIVE index by framework contract (see skillFoldersGroup).
-                void this.plugin
-                    .updateSettings((draft) => {
-                        draft.resources.splice(index, 1)
-                    })
-                    .then(() => {
-                        this.update()
-                    })
-            },
             addItem: {
                 name: 'Add resource',
                 action: (): void => {
@@ -685,6 +675,31 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 {
                     name: 'URL',
                     control: { type: 'text', key: `resource.${id}.url` }
+                },
+                {
+                    name: 'Remove resource',
+                    desc: 'Removes this resource from the catalog.',
+                    // The framework only puts onDelete buttons on plain list
+                    // rows, not on page entries — so a page-shaped resource
+                    // carries its own remove row. A button, not a row action:
+                    // destructive clicks must not fire from the whole row.
+                    render: (setting): void => {
+                        setting.addButton((button) =>
+                            button
+                                .setWarning()
+                                .setButtonText('Remove')
+                                .onClick(async () => {
+                                    await this.plugin.updateSettings((draft) => {
+                                        const i = draft.resources.findIndex((r) => r.id === id)
+                                        if (i >= 0) {
+                                            draft.resources.splice(i, 1)
+                                        }
+                                    })
+                                    new Notice('Resource removed')
+                                    this.update()
+                                })
+                        )
+                    }
                 }
             ]
         }
