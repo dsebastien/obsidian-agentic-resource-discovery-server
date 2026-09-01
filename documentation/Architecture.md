@@ -28,6 +28,7 @@ settings (skill folders, resources)
                    └─ ArdHttpServer.start(port)  ── createRouter(deps) ──┐
                                                                          ▼
    GET /.well-known/ai-catalog.json ─ CatalogService.toCatalog()
+   GET /status                      ─ catalog size + SearchBackend.name/embeddingState (readiness)
    POST /search                     ─ SearchBackend.search() → ARD results
    POST /explore                    ─ facet counts (type/tags/capabilities) over the same set
    GET /agents                      ─ CatalogService.listAll() (paged, filterable)

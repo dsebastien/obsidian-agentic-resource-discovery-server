@@ -45,24 +45,38 @@ Two buttons there save you assembling anything by hand:
 
 ## The endpoints
 
-| Method & path                      | Auth   | Purpose                                                                                               |
-| ---------------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `GET /.well-known/ai-catalog.json` | none   | The full ARD catalog (`ai-catalog.json`).                                                             |
-| `GET /health`                      | none   | Liveness check (`{"status":"ok"}`).                                                                   |
-| `POST /search`                     | bearer | Natural-language search; ranked results with a `score` (0–100, relevance only).                       |
-| `POST /explore`                    | bearer | Facet counts (`type`, `tags`, `capabilities`) over the catalog.                                       |
-| `GET /agents`                      | bearer | Deterministic, paginated listing (`?pageSize=`, `?pageToken=`, `?type=`, `?tags=`, `?capabilities=`). |
-| `GET /skills/<name>`               | bearer | Manifest of a skill's servable files.                                                                 |
-| `GET /skills/<name>/<path>`        | bearer | A skill's `SKILL.md` or a bundled asset.                                                              |
-| `POST /mcp`                        | bearer | MCP endpoint (JSON-RPC 2.0).                                                                          |
+| Method & path                      | Auth   | Purpose                                                                                                                                                       |
+| ---------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /.well-known/ai-catalog.json` | none   | The full ARD catalog (`ai-catalog.json`).                                                                                                                     |
+| `GET /health`                      | none   | Liveness check (`{"status":"ok"}`).                                                                                                                           |
+| `GET /status`                      | bearer | Readiness: catalog size, search backend, and whether semantic embeddings are built yet.                                                                       |
+| `POST /search`                     | bearer | Natural-language search; ranked results with a `score` (0–100, relevance only). `pageSize` (or its alias `limit`, max 100, default 10) caps the result count. |
+| `POST /explore`                    | bearer | Facet counts (`type`, `tags`, `capabilities`) over the catalog.                                                                                               |
+| `GET /agents`                      | bearer | Deterministic, paginated listing (`?pageSize=`, `?pageToken=`, `?type=`, `?tags=`, `?capabilities=`).                                                         |
+| `GET /skills/<name>`               | bearer | Manifest of a skill's servable files.                                                                                                                         |
+| `GET /skills/<name>/<path>`        | bearer | A skill's `SKILL.md` or a bundled asset.                                                                                                                      |
+| `POST /mcp`                        | bearer | MCP endpoint (JSON-RPC 2.0).                                                                                                                                  |
+
+### Is search ready?
+
+Semantic backends answer with lexical-only results while their embeddings are still being built (a full pass over a few hundred skills takes about a minute on a local Ollama). Ask the registry instead of guessing:
+
+```bash
+curl http://127.0.0.1:27182/status -H "Authorization: Bearer <token>"
+# {"status":"ok","catalog":{"entries":415},"search":{"backend":"semantic","embeddings":{"state":"building","ready":false}}}
+```
+
+`embeddings` is `null` for the lexical backend (no dense signal to wait for); otherwise `state` is `idle`, `building`, `ready` or `failed`.
 
 ### Searching
 
 ```bash
 curl -X POST http://127.0.0.1:27182/search \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"query":{"text":"write a conventional commit","filter":{"type":"application/ai-skill"}}}'
+  -d '{"query":{"text":"write a conventional commit","filter":{"type":"application/ai-skill"}},"pageSize":5}'
 ```
+
+`pageSize` is the ARD spec name; `limit` is accepted as an alias because the MCP `search` tool and `/explore` use that word.
 
 Response:
 

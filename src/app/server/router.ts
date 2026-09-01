@@ -52,6 +52,14 @@ const SearchBodySchema = z.object({
     }),
     federation: z.enum(['auto', 'referrals', 'none']).optional(),
     pageSize: z.number().int().positive().max(100).optional(),
+    /**
+     * Alias of `pageSize`. The MCP `search` tool, `/explore` and the Code Mode
+     * `registry.search(query, { limit })` all call it `limit`, and agents carry
+     * that name over to REST; before this alias the field was silently dropped
+     * and the default page came back. `pageSize` (the ARD spec name) wins when
+     * both are present.
+     */
+    limit: z.number().int().positive().max(100).optional(),
     pageToken: z.string().optional()
 })
 
@@ -74,6 +82,7 @@ const ExploreBodySchema = z.object({
 
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 20
+const DEFAULT_SEARCH_LIMIT = 10
 const DEFAULT_FACET_LIMIT = 100
 
 export function createRouter(deps: RouterDeps): RouteHandler {
@@ -99,6 +108,9 @@ export function createRouter(deps: RouterDeps): RouteHandler {
             })
         }
 
+        if (req.method === 'GET' && req.path === '/status') {
+            return handleStatus(deps)
+        }
         if (req.method === 'POST' && req.path === '/search') {
             return handleSearch(deps, req)
         }
@@ -194,6 +206,27 @@ function safeDecode(value: string): string | null {
     }
 }
 
+/**
+ * Registry readiness for agents and operators: how many entries are served and
+ * which search backend answers, including whether its dense signal is live.
+ *
+ * `/health` stays a public liveness ping; this is the authenticated
+ * "is search actually semantic yet?" answer. Semantic backends serve
+ * lexical-only results while their embeddings build, and a client couldn't
+ * tell that apart from the outside before this endpoint existed.
+ */
+function handleStatus(deps: RouterDeps): RegistryResponse {
+    const state = deps.search.embeddingState
+    return json(deps, 200, {
+        status: 'ok',
+        catalog: { entries: deps.catalog.listAll().length },
+        search: {
+            backend: deps.search.name,
+            embeddings: state === undefined ? null : { state, ready: state === 'ready' }
+        }
+    })
+}
+
 async function handleSearch(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
     let parsed: unknown
     try {
@@ -209,10 +242,10 @@ async function handleSearch(deps: RouterDeps, req: RegistryRequest): Promise<Reg
         return errorResponse(deps, 400, 'INVALID_ARGUMENT', `Invalid search request (${where}).`)
     }
 
-    const { query, pageSize } = result.data
+    const { query, pageSize, limit } = result.data
     const hits = await deps.search.search({
         query: query.text,
-        limit: pageSize ?? 10,
+        limit: pageSize ?? limit ?? DEFAULT_SEARCH_LIMIT,
         filter: toBackendFilter(query.filter)
     })
     const results: SearchResultItem[] = hits.map((hit) => ({

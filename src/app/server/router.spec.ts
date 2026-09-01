@@ -125,6 +125,45 @@ describe('registry router', () => {
         expect(JSON.parse(res.body as string).status).toBe('ok')
     })
 
+    it('requires auth for GET /status', async () => {
+        const res = await handle(req({ method: 'GET', path: '/status' }))
+        expect(res.status).toBe(401)
+    })
+
+    it('reports catalog size and search backend on GET /status', async () => {
+        const res = await handle(authed({ method: 'GET', path: '/status' }))
+        expect(res.status).toBe(200)
+        const body = JSON.parse(res.body as string)
+        expect(body.status).toBe('ok')
+        expect(body.catalog.entries).toBe(3)
+        expect(body.search.backend).toBe('lexical')
+        // The lexical backend has no dense signal, so no embedding state at all.
+        expect(body.search.embeddings).toBeNull()
+    })
+
+    it('reports the embedding state on GET /status when the backend has one', async () => {
+        const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
+        catalog.replaceEntries(ENTRIES)
+        const search = new LexicalSearchBackend()
+        await search.index(ENTRIES)
+        const semanticLike = Object.assign(Object.create(search) as typeof search, {
+            name: 'semantic',
+            embeddingState: 'building' as const
+        })
+        const handleSemantic = createRouter({
+            catalog,
+            search: semanticLike,
+            skillFiles: fakeSkillFiles,
+            bearerToken: TOKEN,
+            baseUrl: BASE_URL,
+            enableCors: true
+        })
+        const res = await handleSemantic(authed({ method: 'GET', path: '/status' }))
+        const body = JSON.parse(res.body as string)
+        expect(body.search.backend).toBe('semantic')
+        expect(body.search.embeddings).toEqual({ state: 'building', ready: false })
+    })
+
     it('rejects search without a bearer token', async () => {
         const res = await handle(
             req({ method: 'POST', path: '/search', body: JSON.stringify({ query: { text: 'x' } }) })
@@ -173,6 +212,45 @@ describe('registry router', () => {
         expect(body.results.every((r: { type: string }) => r.type === 'application/ai-skill')).toBe(
             true
         )
+    })
+
+    it('caps POST /search results at pageSize', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/search',
+                body: JSON.stringify({ query: { text: 'note' }, pageSize: 1 })
+            })
+        )
+        expect(res.status).toBe(200)
+        expect(JSON.parse(res.body as string).results).toHaveLength(1)
+    })
+
+    it('accepts limit as an alias of pageSize on POST /search', async () => {
+        // The MCP search tool, /explore and the Code Mode registry all say
+        // `limit`; agents carry that name over to REST. Honour it instead of
+        // silently returning the default page.
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/search',
+                body: JSON.stringify({ query: { text: 'note' }, limit: 1 })
+            })
+        )
+        expect(res.status).toBe(200)
+        expect(JSON.parse(res.body as string).results).toHaveLength(1)
+    })
+
+    it('rejects an out-of-range limit on POST /search', async () => {
+        const res = await handle(
+            authed({
+                method: 'POST',
+                path: '/search',
+                body: JSON.stringify({ query: { text: 'note' }, limit: 0 })
+            })
+        )
+        expect(res.status).toBe(400)
+        expect(JSON.parse(res.body as string).message).toContain('limit')
     })
 
     it('rejects a malformed search body with 400 and an error code', async () => {
