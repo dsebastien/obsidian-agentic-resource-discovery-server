@@ -159,9 +159,16 @@ describe('search tool limit contract', () => {
     })
 })
 
-/** Untyped view of a JSON-RPC response for assertions (round-trips through JSON). */
-function asJson(value: unknown) {
-    return JSON.parse(JSON.stringify(value))
+/** Loosely typed view of a JSON-RPC response for assertions (round-trips through JSON). */
+interface ToolCallView {
+    result: {
+        structuredContent: { entry: { identifier: string }; body?: string }
+        tools: Array<{ name: string }>
+    }
+}
+
+function asJson(value: unknown): ToolCallView {
+    return JSON.parse(JSON.stringify(value)) as ToolCallView
 }
 
 describe('get_resource', () => {
