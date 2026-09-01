@@ -8,6 +8,7 @@ import { ArdServerSettingTab } from './settings/settings-tab'
 import { RegistryController } from './server/registry-controller'
 import { RegistryCoordinator } from './server/registry-coordinator'
 import { PersistentEmbeddingCache } from './search/embedding/persistent-embedding-cache'
+import { scanAgentFolders, type AgentScanResult } from './agents/agent-scanner'
 import { scanSkillFolders, type ScanResult } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
@@ -54,14 +55,20 @@ export class ArdServerPlugin extends Plugin {
         registry: this.registry,
         watcher: this.watcher,
         settings: () => this.settings,
-        skillFolders: () => this.resolveSkillFolders(),
+        skillFolders: () => this.resolveFolders(this.settings.skillFolders),
+        agentFolders: () => this.resolveFolders(this.settings.agentFolders),
         scan: (folders, ctx, cache) =>
             scanSkillFolders(folders, ctx, {
                 cache,
                 // Yield to the UI between chunks so a big scan never freezes it.
                 scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0))
             }),
-        onScanned: (result) => this.recordScanStats(result),
+        scanAgents: (folders, ctx, cache) =>
+            scanAgentFolders(folders, ctx, {
+                cache,
+                scheduler: () => new Promise((resolve) => window.setTimeout(resolve, 0))
+            }),
+        onScanned: (result, agents) => this.recordScanStats(result, agents),
         notify: (message) => {
             new Notice(message)
         }
@@ -168,11 +175,15 @@ export class ArdServerPlugin extends Plugin {
     }
 
     /** Persist the scan stats and refresh an open settings tab. */
-    private async recordScanStats(result: ScanResult): Promise<void> {
+    private async recordScanStats(
+        result: ScanResult,
+        agents: AgentScanResult | null
+    ): Promise<void> {
         this.settings = produce(this.settings, (draft) => {
             draft.lastScanStats = {
                 skillCount: result.skillCount,
-                errorCount: result.errorCount,
+                agentCount: agents?.agentCount ?? 0,
+                errorCount: result.errorCount + (agents?.errorCount ?? 0),
                 lastScanAt: new Date().toISOString()
             }
         })
@@ -183,13 +194,13 @@ export class ArdServerPlugin extends Plugin {
     }
 
     /**
-     * Resolve configured skill folders to absolute filesystem paths. Absolute
-     * paths are used as-is; vault-relative paths (e.g. from the folder picker)
-     * are resolved against the vault base path. Blank entries are dropped.
+     * Resolve configured folders to absolute filesystem paths. Absolute paths
+     * are used as-is; vault-relative paths (e.g. from the folder picker) are
+     * resolved against the vault base path. Blank entries are dropped.
      */
-    private resolveSkillFolders(): string[] {
+    private resolveFolders(folders: string[]): string[] {
         const base = this.vaultBasePath()
-        return this.settings.skillFolders
+        return folders
             .map((folder) => folder.trim())
             .filter((folder) => folder.length > 0)
             .map((folder) => (isAbsolute(folder) || !base ? folder : join(base, folder)))

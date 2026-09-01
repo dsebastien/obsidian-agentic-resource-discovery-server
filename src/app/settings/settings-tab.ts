@@ -85,7 +85,9 @@ export class ArdServerSettingTab extends PluginSettingTab {
             this.statusGroup(),
             this.serverGroup(),
             this.skillFoldersIntroGroup(),
-            this.skillFoldersList(),
+            this.folderList('skillFolders'),
+            this.agentFoldersIntroGroup(),
+            this.folderList('agentFolders'),
             this.skillFoldersOptionsGroup(),
             this.resourcesIntroGroup(),
             this.resourcesList(),
@@ -352,7 +354,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
             grid,
             'Last scan',
             stats.lastScanAt
-                ? `${stats.skillCount} skills, ${stats.errorCount} errors (${stats.lastScanAt})`
+                ? `${stats.skillCount} skills, ${stats.agentCount} subagents, ${stats.errorCount} errors (${stats.lastScanAt})`
                 : 'Not scanned yet',
             { state: stats.lastScanAt ? 'normal' : 'muted' }
         )
@@ -527,8 +529,30 @@ export class ArdServerSettingTab extends PluginSettingTab {
         }
     }
 
-    private skillFoldersList(): SettingDefinitionItem {
-        const folderItems: SettingGroupItem[] = this.plugin.settings.skillFolders.map(
+    private agentFoldersIntroGroup(): SettingDefinitionItem {
+        const stats = this.plugin.settings.lastScanStats
+        const lastScan = stats.lastScanAt ? `Last scan: ${stats.agentCount} subagents.` : ''
+        return {
+            type: 'group',
+            heading: 'Subagent folders',
+            items: [
+                {
+                    name: 'About subagent folders',
+                    desc:
+                        'Folders of subagent definitions: one <name>.md per agent with frontmatter ' +
+                        '(name, description, tools, model) and the system prompt as body, e.g. ' +
+                        ".claude/agents. Off until you add one: every definition's name, description " +
+                        `and tool list becomes part of the public catalog. ${lastScan}`,
+                    searchable: false
+                }
+            ]
+        }
+    }
+
+    /** Editable folder list for a scanned family (skills or subagents). */
+    private folderList(key: 'skillFolders' | 'agentFolders'): SettingDefinitionItem {
+        const folders = this.plugin.settings[key]
+        const folderItems: SettingGroupItem[] = folders.map(
             (folder, index): SettingGroupItem => ({
                 name: folder || `Folder ${index + 1}`,
                 searchable: false,
@@ -540,17 +564,17 @@ export class ArdServerSettingTab extends PluginSettingTab {
                         // before the re-render lands. Track the value the row
                         // last saw and refuse a write when the slot no longer
                         // holds it (then re-render to heal).
-                        let lastSeen = this.plugin.settings.skillFolders[index] ?? ''
+                        let lastSeen = this.plugin.settings[key][index] ?? ''
                         text.setPlaceholder('Pick a vault folder or type an absolute path')
                             .setValue(lastSeen)
                             .onChange(async (value) => {
                                 let stale = false
                                 await this.plugin.updateSettings((draft) => {
-                                    if (draft.skillFolders[index] !== lastSeen) {
+                                    if (draft[key][index] !== lastSeen) {
                                         stale = true
                                         return
                                     }
-                                    draft.skillFolders[index] = value
+                                    draft[key][index] = value
                                 })
                                 if (stale) {
                                     this.update()
@@ -567,7 +591,10 @@ export class ArdServerSettingTab extends PluginSettingTab {
         return {
             type: 'list',
             heading: 'Folders',
-            emptyState: 'No folders yet. Add one to start serving skills.',
+            emptyState:
+                key === 'skillFolders'
+                    ? 'No folders yet. Add one to start serving skills.'
+                    : 'No folders yet. Add one to publish subagent definitions.',
             items: folderItems,
             // LIVE index by framework contract: rows re-index on delete
             // immediately, so resolving from a render-time snapshot would
@@ -575,7 +602,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
             onDelete: (index): void => {
                 void this.plugin
                     .updateSettings((draft) => {
-                        draft.skillFolders.splice(index, 1)
+                        draft[key].splice(index, 1)
                     })
                     .then(() => {
                         this.update()
@@ -586,7 +613,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 action: (): void => {
                     void this.plugin
                         .updateSettings((draft) => {
-                            draft.skillFolders.push('')
+                            draft[key].push('')
                         })
                         .then(() => {
                             this.update()
@@ -603,21 +630,22 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 {
                     name: 'Watch folders for changes',
                     desc:
-                        'Automatically rescan when a SKILL.md changes. Off by default; best-effort — may ' +
+                        'Automatically rescan when a SKILL.md or a subagent definition changes. Off by default; best-effort — may ' +
                         'not fire on network/cloud-synced (e.g. Google Drive) folders. Use Rescan if unsure.',
                     control: { type: 'toggle', key: 'watchSkillFolders' }
                 },
                 {
-                    name: 'Rescan skills now',
-                    desc: 'Re-scan the configured folders and rebuild the catalog.',
+                    name: 'Rescan now',
+                    desc: 'Re-scan every configured folder (skills and subagents) and rebuild the catalog.',
                     render: (setting): void => {
                         setting.addButton((button) =>
-                            button.setButtonText('Rescan skills now').onClick(async () => {
+                            button.setButtonText('Rescan now').onClick(async () => {
                                 button.setButtonText('Scanning…').setDisabled(true)
                                 await this.plugin.rescanSkills()
                                 // rescanSkills() refreshes this tab itself; just notify.
+                                const stats = this.plugin.settings.lastScanStats
                                 new Notice(
-                                    `Scanned ${this.plugin.settings.lastScanStats.skillCount} skills`
+                                    `Scanned ${stats.skillCount} skills, ${stats.agentCount} subagents`
                                 )
                             })
                         )

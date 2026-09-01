@@ -33,6 +33,7 @@ settings (skill folders, resources)
    POST /explore                    ─ facet counts (type/tags/capabilities) over the same set
    GET /agents                      ─ CatalogService.listAll() (paged, filterable)
    GET /skills/<name>/<path>        ─ FsSkillFileService (traversal-safe)
+   GET /subagents/<name>.md         ─ LocalArtifactStore.serveRoute (URN-bound, realpath-checked)
    POST /mcp                        ─ handleMcpMessage() → tools: search/get_skill/execute
                                        └─ execute → QuickJS sandbox over catalog metadata
 ```

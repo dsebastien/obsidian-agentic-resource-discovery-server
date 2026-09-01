@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { createRouter, type RegistryRequest } from './router'
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import { CatalogService } from '../catalog/catalog-service'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
@@ -73,6 +77,7 @@ async function buildRouter() {
         catalog,
         search,
         skillFiles: fakeSkillFiles,
+        artifacts: new LocalArtifactStore(),
         bearerToken: TOKEN,
         baseUrl: BASE_URL,
         enableCors: true
@@ -86,6 +91,7 @@ function routerDeps(search: LexicalSearchBackend) {
         catalog,
         search,
         skillFiles: fakeSkillFiles,
+        artifacts: new LocalArtifactStore(),
         bearerToken: TOKEN,
         baseUrl: BASE_URL,
         enableCors: true
@@ -209,6 +215,57 @@ describe('registry router', () => {
         )
         expect(body.status).toBe('degraded')
         expect(body.search.ready).toBe(false)
+    })
+
+    it('serves a subagent definition on GET /subagents/<name>.md, bearer-gated', async () => {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ard-router-')))
+        writeFileSync(join(dir, 'editor.md'), '---\ndescription: d\n---\nYou are the editor.')
+        const artifacts = new LocalArtifactStore([
+            {
+                urn: 'urn:air:obsidian:subagents:editor',
+                path: join(dir, 'editor.md'),
+                root: dir,
+                contentType: 'text/markdown; charset=utf-8',
+                route: '/subagents/editor.md'
+            }
+        ])
+        const search = new LexicalSearchBackend()
+        await search.index(ENTRIES)
+        const handleAgents = createRouter({ ...routerDeps(search), artifacts })
+
+        expect(
+            (await handleAgents(req({ method: 'GET', path: '/subagents/editor.md' }))).status
+        ).toBe(401)
+        const res = await handleAgents(authed({ method: 'GET', path: '/subagents/editor.md' }))
+        expect(res.status).toBe(200)
+        expect(res.headers['content-type']).toContain('text/markdown')
+        expect(new TextDecoder().decode(res.body as Uint8Array)).toContain('You are the editor.')
+        expect(
+            (await handleAgents(authed({ method: 'GET', path: '/subagents/nope.md' }))).status
+        ).toBe(404)
+        expect(
+            (await handleAgents(authed({ method: 'GET', path: '/subagents/../editor.md' }))).status
+        ).toBe(404)
+    })
+
+    it('counts families on GET /status', async () => {
+        const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
+        catalog.replaceEntries([
+            ...ENTRIES,
+            {
+                identifier: 'urn:air:obsidian:subagents:editor',
+                displayName: 'Editor',
+                type: ArdMediaType.AiAgent,
+                url: `${BASE_URL}/subagents/editor.md`
+            }
+        ])
+        const search = new LexicalSearchBackend()
+        await search.index(catalog.listAll())
+        const handleMixed = createRouter({ ...routerDeps(search), catalog })
+        const body = JSON.parse(
+            (await handleMixed(authed({ method: 'GET', path: '/status' }))).body as string
+        )
+        expect(body.catalog).toEqual({ entries: 4, skills: 2, subagents: 1, manual: 1 })
     })
 
     it('rejects search without a bearer token', async () => {
@@ -411,6 +468,7 @@ describe('registry router', () => {
             catalog,
             search,
             skillFiles: fakeSkillFiles,
+            artifacts: new LocalArtifactStore(),
             bearerToken: TOKEN,
             baseUrl: BASE_URL,
             enableCors: true

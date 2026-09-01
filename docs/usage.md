@@ -11,8 +11,9 @@ The Agentic Resource Discovery Server publishes your AI Skills (and other agenti
 
 1. **Enable the plugin** (Settings → Community plugins).
 2. Open its settings and add one or more **skill folders**. A skill folder contains skill subfolders, each with a `SKILL.md` file (Anthropic Agent Skill format). Use the autocomplete to pick a vault folder (e.g. `.claude/skills`), or paste an absolute path for folders outside the vault.
-3. Click **Rescan skills now**. The **Status** panel reports how many skills were indexed and how many failed to parse.
-4. Copy the **bearer token** from the **Server** section — agents need it for every request except the public catalog.
+3. Optionally add one or more **subagent folders**: folders of agent definitions, one `<name>.md` per agent with frontmatter (`name`, `description`, `tools`, `model`) and the system prompt as body (e.g. `.claude/agents`). This is off until you add a folder, because everything listed becomes part of the public catalog.
+4. Click **Rescan now**. The **Status** panel reports how many skills and subagents were indexed and how many failed to parse.
+5. Copy the **bearer token** from the **Server** section — agents need it for every request except the public catalog.
 
 The server starts automatically when the plugin loads and binds to `http://127.0.0.1:<port>` (default port **27182**). To stop it, disable the plugin in **Settings → Community plugins**.
 
@@ -55,6 +56,7 @@ Two buttons there save you assembling anything by hand:
 | `GET /agents`                      | bearer | Deterministic, paginated listing (`?pageSize=`, `?pageToken=`, `?type=`, `?tags=`, `?capabilities=`).                                                         |
 | `GET /skills/<name>`               | bearer | Manifest of a skill's servable files.                                                                                                                         |
 | `GET /skills/<name>/<path>`        | bearer | A skill's `SKILL.md` or a bundled asset.                                                                                                                      |
+| `GET /subagents/<name>.md`         | bearer | A subagent definition (frontmatter + system prompt).                                                                                                          |
 | `POST /mcp`                        | bearer | MCP endpoint (JSON-RPC 2.0).                                                                                                                                  |
 
 ### Is search ready?
@@ -63,7 +65,7 @@ Semantic backends answer with lexical-only results while their embeddings are st
 
 ```bash
 curl http://127.0.0.1:27182/status -H "Authorization: Bearer <token>"
-# {"status":"ok","catalog":{"entries":415},"search":{"backend":"semantic","ready":true,"embeddings":{"state":"building","ready":false}}}
+# {"status":"ok","catalog":{"entries":478,"skills":416,"subagents":62,"manual":0},"search":{"backend":"semantic","ready":true,"embeddings":{"state":"building","ready":false}}}
 ```
 
 Always HTTP 200 — it is a report, not a probe. `status` is `ok` when search can serve queries and nothing has failed, `degraded` when there is no index yet or the embedding build `failed` (lexical-only until the next rebuild). A `building` embedding index is still `ok`: search works, it just isn't semantic yet. `search.embeddings` is `null` for the lexical backend (no dense signal to wait for); otherwise `state` is `idle`, `building`, `ready` or `failed`.
@@ -133,10 +135,10 @@ curl "http://127.0.0.1:27182/agents?tags=git,notes&type=application/ai-skill&pag
 
 ### Using it as an MCP server
 
-Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: Bearer <token>` — or just use **Copy MCP config** in the settings **Status** panel. Three tools are exposed:
+Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: Bearer <token>` — or just use **Copy MCP config** in the settings **Status** panel. The tools:
 
-- **`search`** — natural-language search, returns ranked metadata (no bodies).
-- **`get_skill`** — fetch one entry by URN, optionally with its `SKILL.md` body.
+- **`search`** — natural-language search, returns ranked metadata (no bodies). `filter.type` selects a family: `application/ai-skill` for skills, `application/ai-agent+md` for subagent definitions.
+- **`get_resource`** — fetch one entry by URN, optionally with its body (the `SKILL.md` of a skill, the definition file of a subagent). The body is resolved by URN, never from the entry's URL. **`get_skill`** is kept as an alias.
 - **`execute`** — Code Mode: write JavaScript that calls a pre-injected `registry` API (`registry.search(query, { limit, filter })`, `registry.get(id)`, `registry.listAll(filter)`) and return a result. Runs in a sandbox with no network/filesystem access, a time limit, and a memory cap — so an agent can filter and aggregate across the whole catalog in one call. `registry.search` ranks identically to `POST /search`, so the answer doesn't depend on which door the agent walks through.
 
 ## Commands

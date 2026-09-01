@@ -1,6 +1,6 @@
 # Subagent definitions as a second resource family
 
-**Status:** proposed · 2026-09-01 · revised the same day after an adversarial review (Codex gpt-5.6-sol, xhigh) — see §8 for what changed and why.
+**Status:** implemented 2026-09-01 (see `documentation/history/2026-09-01.md`) · revised the same day after an adversarial review (Codex gpt-5.6-sol, xhigh) — see §8 for what changed and why.
 **Motivation:** a Claude Code session started with `--disable-slash-commands` and only the ARD MCP server boots at ~48K tokens instead of ~98K (measured on a 415-skill / 63-agent vault). Skills are already discoverable through ARD; the 63 agent definitions in `.claude/agents/` are not, so a no-registry session still can't find "the editor" or "the hater". This plan makes agent definitions a catalog family next to skills — **strictly additive**: nothing that exists today changes shape.
 
 ## 1. What the spec allows (ARD v0.91)

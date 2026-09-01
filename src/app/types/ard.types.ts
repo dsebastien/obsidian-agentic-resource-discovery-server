@@ -9,6 +9,14 @@
 /** IANA media types an ARD catalog entry can advertise. */
 export enum ArdMediaType {
     AiSkill = 'application/ai-skill',
+    /**
+     * A subagent definition: a markdown file whose frontmatter names an agent
+     * (`name`, `description`, `tools`/`allowed-tools`, `model`) and whose body is
+     * its system prompt — the Claude Code `.claude/agents/*.md` shape. The ARD
+     * spec defines no type for this artifact class; `type` is an open media
+     * type, so the registry names one in the spec's `+md` convention.
+     */
+    AiAgent = 'application/ai-agent+md',
     McpServerCard = 'application/mcp-server-card+json',
     A2aAgentCard = 'application/a2a-agent-card+json',
     AiCatalog = 'application/ai-catalog+json',

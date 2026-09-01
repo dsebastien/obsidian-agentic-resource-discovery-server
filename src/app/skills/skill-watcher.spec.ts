@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { SkillWatcher, type WatchFn } from './skill-watcher'
+import { SkillWatcher, affectsCatalog, type WatchFn } from './skill-watcher'
 
 const timers = {
     set: (cb: () => void, ms: number) => setTimeout(cb, ms),
@@ -100,6 +100,35 @@ describe('SkillWatcher', () => {
         watcher.start(['/a'], () => {})
         watcher.start(['/b'], () => {})
         expect(watchedDirs()).toEqual(['/b'])
+        watcher.stop()
+    })
+})
+
+describe('affectsCatalog', () => {
+    it('skill roots react to SKILL.md at every depth only', () => {
+        expect(affectsCatalog('SKILL.md', 'skills')).toBe(true)
+        expect(affectsCatalog('a/b/SKILL.md', 'skills')).toBe(true)
+        expect(affectsCatalog('a/README.md', 'skills')).toBe(false)
+    })
+
+    it('subagent roots react to top-level .md files only', () => {
+        expect(affectsCatalog('editor.md', 'subagents')).toBe(true)
+        expect(affectsCatalog('nested/editor.md', 'subagents')).toBe(false)
+        expect(affectsCatalog('editor.txt', 'subagents')).toBe(false)
+        expect(affectsCatalog('nested\\editor.md', 'subagents')).toBe(false)
+    })
+
+    it('watches subagent roots with their own gate', async () => {
+        const fw = fakeWatch()
+        let calls = 0
+        const watcher = new SkillWatcher(fw.watchFn, timers, 5)
+        watcher.start([{ folder: '/agents', family: 'subagents' }], () => calls++)
+        fw.fire('/agents', 'nested/x.md')
+        await delay(15)
+        expect(calls).toBe(0)
+        fw.fire('/agents', 'editor.md')
+        await delay(15)
+        expect(calls).toBe(1)
         watcher.stop()
     })
 })

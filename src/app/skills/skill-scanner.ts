@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { type LocalArtifact, resolveRoot } from '../artifacts/local-artifact-store'
 import type { CatalogEntry } from '../types/ard.types'
 import { parseSkill } from './skill-parser'
 import { buildSkillEntry } from './skill-enricher'
@@ -21,6 +22,8 @@ export interface ScanCacheEntry {
     entry: CatalogEntry
     folderName: string
     dir: string
+    /** The SKILL.md behind the entry, bound to its URN for body serving. */
+    artifact: LocalArtifact
 }
 
 /**
@@ -54,6 +57,8 @@ export interface ScanResult {
     entries: CatalogEntry[]
     /** Skill folder name → absolute directory path (for serving bundle files). */
     folders: Map<string, string>
+    /** One artifact per entry: the SKILL.md, resolved by URN. */
+    artifacts: LocalArtifact[]
     skillCount: number
     errorCount: number
     /** Skills dropped because another skill already claimed the same URN. */
@@ -92,6 +97,7 @@ export async function scanSkillFolders(
 
     const entries: CatalogEntry[] = []
     const folders = new Map<string, string>()
+    const artifacts: LocalArtifact[] = []
     const seen = new Set<string>()
     // Rebuilt from scratch every scan, so deleted files simply drop out.
     const cacheFiles = new Map<string, ScanCacheEntry>()
@@ -118,7 +124,8 @@ export async function scanSkillFolders(
                 mtimeMs: result.mtimeMs,
                 entry: result.entry,
                 folderName: result.folderName,
-                dir: result.dir
+                dir: result.dir,
+                artifact: result.artifact
             })
             if (seen.has(result.entry.identifier)) {
                 duplicateCount++
@@ -127,6 +134,7 @@ export async function scanSkillFolders(
             seen.add(result.entry.identifier)
             entries.push(result.entry)
             folders.set(result.folderName, result.dir)
+            artifacts.push(result.artifact)
             skillCount++
         }
         await scheduler()
@@ -135,6 +143,7 @@ export async function scanSkillFolders(
     return {
         entries,
         folders,
+        artifacts,
         skillCount,
         errorCount,
         duplicateCount,
@@ -165,14 +174,22 @@ async function buildEntry(
         const content = await readFile(file, 'utf-8')
         const dir = dirname(file)
         const folderName = basename(dir)
+        const route = `/skills/${encodeURIComponent(folderName)}/${SKILL_FILE}`
         const entry = buildSkillEntry({
             parsed: parseSkill(content),
             name: folderName,
             publisher: ctx.publisher,
-            url: `${ctx.baseUrl}/skills/${encodeURIComponent(folderName)}/${SKILL_FILE}`,
+            url: `${ctx.baseUrl}${route}`,
             updatedAt: stats.mtime.toISOString()
         })
-        return { entry, folderName, dir, file, mtimeMs: stats.mtimeMs, reused: false }
+        const artifact: LocalArtifact = {
+            urn: entry.identifier,
+            path: file,
+            root: await resolveRoot(dir),
+            contentType: 'text/markdown; charset=utf-8',
+            route
+        }
+        return { entry, folderName, dir, artifact, file, mtimeMs: stats.mtimeMs, reused: false }
     } catch {
         return null
     }

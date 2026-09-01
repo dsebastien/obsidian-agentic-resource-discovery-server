@@ -26,6 +26,7 @@ function scanResult(over: Partial<ScanResult> = {}): ScanResult {
             }
         ],
         folders: new Map([['alpha', '/skills/alpha']]),
+        artifacts: [],
         skillCount: 1,
         errorCount: 0,
         duplicateCount: 0,
@@ -65,8 +66,8 @@ function harness(
         rebuild: async () => {
             calls.push('rebuild')
         },
-        setSkillEntries: async () => {
-            calls.push('setSkillEntries')
+        setScannedEntries: async () => {
+            calls.push('setScannedEntries')
         },
         reindex: async () => {
             calls.push('reindex')
@@ -78,9 +79,9 @@ function harness(
     }
 
     const watcher: WatcherPort = {
-        start: (folders) => {
+        start: (targets) => {
             calls.push('watch')
-            watching.push(folders)
+            watching.push(targets.map((t) => t.folder))
             return []
         },
         stop: () => {
@@ -194,7 +195,7 @@ describe('RegistryCoordinator dispose', () => {
         })
         disposeNow = () => h.coordinator.dispose()
         await h.coordinator.rescanSkills()
-        expect(h.calls).not.toContain('setSkillEntries')
+        expect(h.calls).not.toContain('setScannedEntries')
         expect(h.calls).not.toContain('onScanned')
     })
 
@@ -333,7 +334,7 @@ describe('RegistryCoordinator scanning', () => {
     it('feeds scan results into the registry and reports them', async () => {
         const h = harness()
         await h.coordinator.rescanSkills()
-        expect(h.calls).toEqual(['scan', 'setSkillEntries', 'onScanned'])
+        expect(h.calls).toEqual(['scan', 'setScannedEntries', 'onScanned'])
     })
 
     it('skips scanning when no folder is configured', async () => {
@@ -357,7 +358,7 @@ describe('RegistryCoordinator scanning', () => {
             }
         })
         await h.coordinator.rescanSkills() // must not reject
-        expect(h.calls).not.toContain('setSkillEntries')
+        expect(h.calls).not.toContain('setScannedEntries')
     })
 })
 
@@ -373,5 +374,91 @@ describe('RegistryCoordinator embedding supervision', () => {
         const h = harness({}, { embeddingsNeedRetry: false })
         h.coordinator.retryEmbeddingsIfNeeded()
         expect(h.calls).toEqual([])
+    })
+})
+
+describe('subagent scanning', () => {
+    it('publishes both families in one snapshot and one rebuild', async () => {
+        const snapshots: unknown[] = []
+        const h = harness(
+            {
+                agentFolders: () => ['/agents'],
+                scanAgents: async () => ({
+                    entries: [
+                        {
+                            identifier: 'urn:air:obsidian:subagents:editor',
+                            displayName: 'Editor',
+                            type: ArdMediaType.AiAgent,
+                            url: 'http://127.0.0.1:27182/subagents/editor.md'
+                        }
+                    ],
+                    artifacts: [],
+                    agentCount: 1,
+                    errorCount: 0,
+                    duplicateCount: 0,
+                    skippedCount: 0,
+                    cache: {
+                        publisher: 'obsidian',
+                        baseUrl: 'http://127.0.0.1:27182',
+                        files: new Map()
+                    }
+                })
+            },
+            {
+                setScannedEntries: async (_settings, snapshot) => {
+                    snapshots.push(snapshot)
+                }
+            }
+        )
+        await h.coordinator.rescanSkills()
+        expect(snapshots).toHaveLength(1)
+        const snap = snapshots[0] as {
+            skills: { entries: unknown[] }
+            subagents: { entries: unknown[] }
+        }
+        expect(snap.skills.entries).toHaveLength(1)
+        expect(snap.subagents.entries).toHaveLength(1)
+    })
+
+    it('scans when only subagent folders are configured', async () => {
+        const h = harness({
+            skillFolders: () => [],
+            agentFolders: () => ['/agents'],
+            scanAgents: async () => ({
+                entries: [],
+                artifacts: [],
+                agentCount: 0,
+                errorCount: 0,
+                duplicateCount: 0,
+                skippedCount: 0,
+                cache: {
+                    publisher: 'obsidian',
+                    baseUrl: 'http://127.0.0.1:27182',
+                    files: new Map()
+                }
+            })
+        })
+        await h.coordinator.rescanSkills()
+        expect(h.calls).toContain('setScannedEntries')
+    })
+
+    it('keeps the previous catalog when the subagent scan throws', async () => {
+        const h = harness({
+            agentFolders: () => ['/agents'],
+            scanAgents: async () => {
+                throw new Error('disk gone')
+            }
+        })
+        await h.coordinator.rescanSkills()
+        expect(h.calls).not.toContain('setScannedEntries')
+    })
+
+    it('watches subagent folders alongside skill folders', () => {
+        const h = harness({
+            settings: () => settingsWith((d) => void (d.watchSkillFolders = true)),
+            agentFolders: () => ['/agents']
+        })
+        h.coordinator.reconcileWatcher()
+        expect(h.watching.at(-1)).toEqual(['/skills', '/agents'])
     })
 })

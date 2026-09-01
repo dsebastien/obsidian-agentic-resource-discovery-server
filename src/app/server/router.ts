@@ -1,11 +1,17 @@
 import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
+import type { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import type { CatalogService } from '../catalog/catalog-service'
 import { handleMcpMessage } from '../mcp/mcp-server'
 import { matchesFilter } from '../search/search-utils'
 import type { SearchBackend, SearchFilter } from '../search/search-backend'
 import type { SkillFileService } from '../skills/skill-file-server'
-import type { ArdErrorResponse, CatalogEntry, SearchResultItem } from '../types/ard.types'
+import {
+    ArdMediaType,
+    type ArdErrorResponse,
+    type CatalogEntry,
+    type SearchResultItem
+} from '../types/ard.types'
 
 /**
  * The registry router: a pure function from a transport-agnostic request to a
@@ -37,6 +43,8 @@ export interface RouterDeps {
     catalog: CatalogService
     search: SearchBackend
     skillFiles: SkillFileService
+    /** URN-bound artifacts (SKILL.md files, subagent definitions). */
+    artifacts: LocalArtifactStore
     bearerToken: string
     /** Registry base URL, surfaced as `source` on each search result. */
     baseUrl: string
@@ -123,6 +131,9 @@ export function createRouter(deps: RouterDeps): RouteHandler {
         if (req.method === 'GET' && req.path.startsWith('/skills/')) {
             return handleSkillFile(deps, req)
         }
+        if (req.method === 'GET' && req.path.startsWith('/subagents/')) {
+            return handleArtifactRoute(deps, req)
+        }
         if (req.method === 'POST' && req.path === '/mcp') {
             return handleMcp(deps, req)
         }
@@ -143,7 +154,7 @@ async function handleMcp(deps: RouterDeps, req: RegistryRequest): Promise<Regist
         })
     }
 
-    const mcpDeps = { catalog: deps.catalog, search: deps.search, skillFiles: deps.skillFiles }
+    const mcpDeps = { catalog: deps.catalog, search: deps.search, artifacts: deps.artifacts }
 
     if (Array.isArray(parsed)) {
         const responses = (
@@ -158,6 +169,25 @@ async function handleMcp(deps: RouterDeps, req: RegistryRequest): Promise<Regist
     return response
         ? json(deps, 200, response)
         : { status: 202, headers: corsHeaders(deps), body: '' }
+}
+
+/** Serve a flat artifact (a subagent definition) by its exact registry route. */
+async function handleArtifactRoute(
+    deps: RouterDeps,
+    req: RegistryRequest
+): Promise<RegistryResponse> {
+    const result = await deps.artifacts.serveRoute(req.path)
+    if (result === 'not-found') {
+        return errorResponse(deps, 404, 'NOT_FOUND', `Not found: ${req.path}`)
+    }
+    if (result === 'forbidden') {
+        return errorResponse(deps, 403, 'PERMISSION_DENIED', 'Artifact is outside its root.')
+    }
+    return {
+        status: 200,
+        headers: { 'content-type': result.contentType, ...corsHeaders(deps) },
+        body: result.body
+    }
 }
 
 async function handleSkillFile(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {
@@ -227,13 +257,24 @@ function handleStatus(deps: RouterDeps): RegistryResponse {
     const degraded = !ready || state === 'failed'
     return json(deps, 200, {
         status: degraded ? 'degraded' : 'ok',
-        catalog: { entries: deps.catalog.listAll().length },
+        catalog: catalogCounts(deps),
         search: {
             backend: deps.search.name,
             ready,
             embeddings: state === undefined ? null : { state, ready: state === 'ready' }
         }
     })
+}
+
+function catalogCounts(deps: RouterDeps): Record<string, number> {
+    let skills = 0
+    let subagents = 0
+    const all = deps.catalog.listAll()
+    for (const entry of all) {
+        if (entry.type === ArdMediaType.AiSkill) skills++
+        else if (entry.type === ArdMediaType.AiAgent) subagents++
+    }
+    return { entries: all.length, skills, subagents, manual: all.length - skills - subagents }
 }
 
 async function handleSearch(deps: RouterDeps, req: RegistryRequest): Promise<RegistryResponse> {

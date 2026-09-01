@@ -24,7 +24,15 @@ A list of folders to scan for `SKILL.md` files. Each input has folder autocomple
 
 - **Add folder** appends a row; the trash icon removes one.
 - **Watch folders for changes** (off by default) auto-rescans when a `SKILL.md` changes — best-effort; may not fire on cloud-synced/network folders.
-- **Rescan skills now** re-scans the folders and rebuilds the catalog. The status line shows the last scan's skill/error counts.
+- **Rescan now** re-scans every configured folder (skills and subagents) and rebuilds the catalog once. The status line shows the last scan's counts.
+
+## Subagent folders
+
+Folders of subagent definitions: one `<name>.md` per agent whose frontmatter carries `name`, `description`, `tools` (or `allowed-tools`), `model` and optionally `color`, with the system prompt as the body — the Claude Code `.claude/agents/` layout. Same autocomplete and path rules as skill folders. Only top-level files count; nested markdown is treated as documentation.
+
+Empty by default and deliberately so: every definition you list becomes a public catalog entry (name, description, model, tool list; the body stays behind the bearer token). The file stem is the identity (`agent-osk-editor.md` → `urn:air:<publisher>:subagents:agent-osk-editor`); when two folders define the same stem, the first folder in the list wins.
+
+**Watch folders for changes** and **Rescan now** cover both families.
 
 ## Additional resources
 

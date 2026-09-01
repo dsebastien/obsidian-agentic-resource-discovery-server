@@ -1,6 +1,6 @@
+import type { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import type { CatalogService } from '../catalog/catalog-service'
 import type { SearchBackend } from '../search/search-backend'
-import type { SkillFileService } from '../skills/skill-file-server'
 import { runSandbox } from './sandbox'
 
 /**
@@ -23,7 +23,8 @@ const SERVER_INFO = { name: 'ard-registry', version: '1.0.0' }
 export interface McpDeps {
     catalog: CatalogService
     search: SearchBackend
-    skillFiles: SkillFileService
+    /** URN-bound artifacts; the only way a tool call turns an entry into a body. */
+    artifacts: LocalArtifactStore
     /** Wall-clock limit for the execute sandbox (default 10s). */
     executeTimeoutMs?: number
 }
@@ -43,14 +44,16 @@ interface JsonRpcResponse {
 }
 
 /** Tools this endpoint exposes, in the order they are advertised. */
-export const MCP_TOOL_NAMES = ['search', 'get_skill', 'execute'] as const
+export const MCP_TOOL_NAMES = ['search', 'get_resource', 'get_skill', 'execute'] as const
 
 const TOOLS = [
     {
         name: 'search',
         description:
             'Search the local ARD registry by natural-language query. Returns ranked results ' +
-            '(score 0-100) with metadata but NOT skill bodies — use get_skill for those.',
+            '(score 0-100) with metadata but NOT bodies — use get_resource for those. Entries are ' +
+            'AI Skills (type application/ai-skill) and subagent definitions ' +
+            '(type application/ai-agent+md); filter.type selects a family.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -69,9 +72,22 @@ const TOOLS = [
         }
     },
     {
-        name: 'get_skill',
+        name: 'get_resource',
         description:
-            'Fetch one catalog entry by its URN identifier, optionally including the full SKILL.md body.',
+            'Fetch one catalog entry by its URN identifier, optionally including the artifact body ' +
+            '(the SKILL.md of a skill, the definition file of a subagent).',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                identifier: { type: 'string' },
+                include_body: { type: 'boolean' }
+            },
+            required: ['identifier']
+        }
+    },
+    {
+        name: 'get_skill',
+        description: 'Alias of get_resource, kept for existing clients.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -146,8 +162,9 @@ async function callTool(params: Record<string, unknown>, deps: McpDeps): Promise
     switch (name) {
         case 'search':
             return toolSearch(args, deps)
+        case 'get_resource':
         case 'get_skill':
-            return toolGetSkill(args, deps)
+            return toolGetResource(args, deps)
         case 'execute':
             return toolExecute(args, deps)
         default:
@@ -183,15 +200,20 @@ async function toolSearch(args: Record<string, unknown>, deps: McpDeps): Promise
     return toolResult(`Found ${results.length} result(s).`, { results })
 }
 
-async function toolGetSkill(args: Record<string, unknown>, deps: McpDeps): Promise<unknown> {
+async function toolGetResource(args: Record<string, unknown>, deps: McpDeps): Promise<unknown> {
     const identifier = typeof args['identifier'] === 'string' ? args['identifier'] : ''
     const entry = deps.catalog.getEntry(identifier)
     if (!entry) {
         return toolError(`Not found: ${identifier}`)
     }
     let body: string | undefined
-    if (args['include_body'] === true && typeof entry.url === 'string') {
-        body = await fetchSkillBody(entry.url, deps)
+    if (args['include_body'] === true) {
+        // Resolved by URN, never by the entry's URL: a manual resource whose URL
+        // happens to look like a local route has no artifact and gets no body.
+        const served = await deps.artifacts.serve(identifier)
+        if (served !== 'not-found' && served !== 'forbidden') {
+            body = new TextDecoder().decode(served.body)
+        }
     }
     return toolResult(entry.displayName, { entry, body })
 }
@@ -209,26 +231,6 @@ async function toolExecute(args: Record<string, unknown>, deps: McpDeps): Promis
         return toolError(`Execution error: ${result.error}`)
     }
     return toolResult(JSON.stringify(result.value, null, 2), { result: result.value })
-}
-
-/** Read a skill body via the file service by parsing its /skills/<name>/ URL. */
-async function fetchSkillBody(url: string, deps: McpDeps): Promise<string | undefined> {
-    const match = url.match(/\/skills\/([^/]+)\/(.+)$/)
-    if (!match) return undefined
-    const name = safeDecode(match[1]!)
-    const relPath = match[2]!
-    if (name === null) return undefined
-    const file = await deps.skillFiles.file(name, relPath)
-    if (file === 'not-found' || file === 'forbidden') return undefined
-    return new TextDecoder().decode(file.body)
-}
-
-function safeDecode(value: string): string | null {
-    try {
-        return decodeURIComponent(value)
-    } catch {
-        return null
-    }
 }
 
 function toolResult(text: string, structuredContent: unknown): unknown {

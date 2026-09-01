@@ -1,3 +1,4 @@
+import { type LocalArtifact, LocalArtifactStore } from '../artifacts/local-artifact-store'
 import { CatalogService } from '../catalog/catalog-service'
 import { manualResourcesToEntries } from '../catalog/resource-mapper'
 import type { EmbeddingCache } from '../search/embedding/embedding-cache'
@@ -9,6 +10,20 @@ import type { CatalogEntry, HostInfo } from '../types/ard.types'
 import type { PluginSettings } from '../types/plugin-settings.intf'
 import { ArdHttpServer } from './http-server'
 import { createRouter, type RouterDeps } from './router'
+
+/**
+ * Everything one scan pass discovered, replaced as a unit so a client can never
+ * observe fresh skills next to stale subagents (or a half-built index).
+ */
+export interface ScanSnapshot {
+    skills: { entries: CatalogEntry[]; folders: Map<string, string>; artifacts: LocalArtifact[] }
+    subagents: { entries: CatalogEntry[]; artifacts: LocalArtifact[] }
+}
+
+export const EMPTY_SNAPSHOT: ScanSnapshot = {
+    skills: { entries: [], folders: new Map(), artifacts: [] },
+    subagents: { entries: [], artifacts: [] }
+}
 
 /**
  * Owns the running registry: catalog, search index, skill file service, and the
@@ -29,10 +44,9 @@ export class RegistryController {
     private server: ArdHttpServer | null = null
     private deps: RouterDeps | null = null
     private catalog: CatalogService | null = null
-    /** Entries from the latest skill scan; merged with manual resources. */
-    private skillEntries: CatalogEntry[] = []
-    /** Skill folder name → absolute directory path (for serving bundle files). */
-    private skillFolders = new Map<string, string>()
+    /** The latest scan, merged with manual resources into the catalog. */
+    private snapshot: ScanSnapshot = EMPTY_SNAPSHOT
+    private artifacts = new LocalArtifactStore()
 
     /** Build the catalog/index from settings and start the HTTP server. */
     async start(settings: PluginSettings): Promise<void> {
@@ -44,7 +58,8 @@ export class RegistryController {
         const deps: RouterDeps = {
             catalog,
             search: this.search,
-            skillFiles: new FsSkillFileService(this.skillFolders, baseUrl),
+            skillFiles: new FsSkillFileService(this.snapshot.skills.folders, baseUrl),
+            artifacts: this.artifacts,
             bearerToken: settings.server.bearerToken,
             baseUrl,
             enableCors: settings.server.enableCors
@@ -53,7 +68,7 @@ export class RegistryController {
         await server.start(settings.server.port, settings.server.bindAddress)
         // Pin URLs to the actual bound port (handles ephemeral port 0).
         deps.baseUrl = `http://127.0.0.1:${server.port}`
-        deps.skillFiles = new FsSkillFileService(this.skillFolders, deps.baseUrl)
+        deps.skillFiles = new FsSkillFileService(this.snapshot.skills.folders, deps.baseUrl)
 
         this.catalog = catalog
         this.deps = deps
@@ -68,24 +83,40 @@ export class RegistryController {
         }
         const catalog = await this.buildCatalog(settings)
         this.deps.catalog = catalog
-        this.deps.skillFiles = new FsSkillFileService(this.skillFolders, this.deps.baseUrl)
+        this.deps.skillFiles = new FsSkillFileService(
+            this.snapshot.skills.folders,
+            this.deps.baseUrl
+        )
+        this.deps.artifacts = this.artifacts
         this.deps.bearerToken = settings.server.bearerToken
         this.deps.enableCors = settings.server.enableCors
         this.catalog = catalog
     }
 
     /**
-     * Replace the scanned-skill entries (and the folders they were served from)
-     * and rebuild the catalog in place.
+     * Replace every scanned entry (skills and subagents) and the artifacts that
+     * serve them, then rebuild the catalog and index once.
      */
+    async setScannedEntries(settings: PluginSettings, snapshot: ScanSnapshot): Promise<void> {
+        this.snapshot = snapshot
+        this.artifacts = new LocalArtifactStore([
+            ...snapshot.skills.artifacts,
+            ...snapshot.subagents.artifacts
+        ])
+        await this.rebuild(settings)
+    }
+
+    /** Skill-only adapter over {@link setScannedEntries}; keeps prior subagents. */
     async setSkillEntries(
         settings: PluginSettings,
         entries: CatalogEntry[],
-        folders: Map<string, string>
+        folders: Map<string, string>,
+        artifacts: LocalArtifact[] = []
     ): Promise<void> {
-        this.skillEntries = entries
-        this.skillFolders = folders
-        await this.rebuild(settings)
+        await this.setScannedEntries(settings, {
+            skills: { entries, folders, artifacts },
+            subagents: this.snapshot.subagents
+        })
     }
 
     /**
@@ -116,6 +147,14 @@ export class RegistryController {
         return this.catalog?.size ?? 0
     }
 
+    /** Per-family entry counts for the status surfaces. */
+    get catalogCounts(): { entries: number; skills: number; subagents: number; manual: number } {
+        const skills = this.snapshot.skills.entries.length
+        const subagents = this.snapshot.subagents.entries.length
+        const entries = this.catalogSize
+        return { entries, skills, subagents, manual: Math.max(0, entries - skills - subagents) }
+    }
+
     /**
      * True when the backend's background embedding index failed and should be
      * retried (e.g. the embedding server wasn't up yet). False while it's still
@@ -143,7 +182,8 @@ export class RegistryController {
         const catalog = new CatalogService(hostFrom(settings))
         const entries = [
             ...manualResourcesToEntries(settings.resources, settings.publisher),
-            ...this.skillEntries
+            ...this.snapshot.skills.entries,
+            ...this.snapshot.subagents.entries
         ]
         catalog.replaceEntries(entries)
         await this.search.index(entries)

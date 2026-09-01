@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { handleMcpMessage, MCP_TOOL_NAMES, type McpDeps } from './mcp-server'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import { CatalogService } from '../catalog/catalog-service'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
@@ -15,6 +20,10 @@ const ENTRIES: CatalogEntry[] = [
     }
 ]
 
+const FIXTURE_ROOT = realpathSync(mkdtempSync(join(tmpdir(), 'ard-mcp-')))
+const SKILL_FIXTURE = join(FIXTURE_ROOT, 'SKILL.md')
+writeFileSync(SKILL_FIXTURE, '# Git Commit\nbody')
+
 async function makeDeps(): Promise<McpDeps> {
     const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
     catalog.replaceEntries(ENTRIES)
@@ -24,13 +33,15 @@ async function makeDeps(): Promise<McpDeps> {
         catalog,
         search,
         executeTimeoutMs: 400,
-        skillFiles: {
-            manifest: async () => null,
-            file: async () => ({
-                contentType: 'text/markdown',
-                body: new TextEncoder().encode('# Git Commit\nbody')
-            })
-        }
+        artifacts: new LocalArtifactStore([
+            {
+                urn: ENTRIES[0]!.identifier,
+                path: SKILL_FIXTURE,
+                root: FIXTURE_ROOT,
+                contentType: 'text/markdown; charset=utf-8',
+                route: '/skills/git-commit/SKILL.md'
+            }
+        ])
     }
 }
 
@@ -145,5 +156,69 @@ describe('search tool limit contract', () => {
             )
             expect(seen.at(-1)).toBe(expected)
         }
+    })
+})
+
+/** Untyped view of a JSON-RPC response for assertions (round-trips through JSON). */
+function asJson(value: unknown) {
+    return JSON.parse(JSON.stringify(value))
+}
+
+describe('get_resource', () => {
+    it('resolves the body by URN and get_skill stays as an alias', async () => {
+        const deps = await makeDeps()
+        for (const tool of ['get_resource', 'get_skill']) {
+            const res = asJson(
+                await handleMcpMessage(
+                    {
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'tools/call',
+                        params: {
+                            name: tool,
+                            arguments: { identifier: ENTRIES[0]!.identifier, include_body: true }
+                        }
+                    },
+                    deps
+                )
+            )
+            expect(res.result.structuredContent.body).toContain('# Git Commit')
+        }
+    })
+
+    it('gives no body to an entry whose URL merely looks like a local route', async () => {
+        const deps = await makeDeps()
+        const impostor = {
+            identifier: 'urn:air:obsidian:mcp:impostor',
+            displayName: 'Impostor',
+            type: 'application/mcp-server-card+json',
+            url: 'http://127.0.0.1:27182/skills/git-commit/SKILL.md'
+        }
+        deps.catalog.replaceEntries([...ENTRIES, impostor])
+        const res = asJson(
+            await handleMcpMessage(
+                {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'tools/call',
+                    params: {
+                        name: 'get_resource',
+                        arguments: { identifier: impostor.identifier, include_body: true }
+                    }
+                },
+                deps
+            )
+        )
+        expect(res.result.structuredContent.entry.identifier).toBe(impostor.identifier)
+        expect(res.result.structuredContent.body).toBeUndefined()
+    })
+
+    it('advertises get_resource before the get_skill alias', async () => {
+        const deps = await makeDeps()
+        const res = asJson(
+            await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, deps)
+        )
+        const names = res.result.tools.map((t: { name: string }) => t.name)
+        expect(names).toEqual(['search', 'get_resource', 'get_skill', 'execute'])
     })
 })

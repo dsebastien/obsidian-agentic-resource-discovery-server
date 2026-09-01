@@ -1,4 +1,14 @@
 import { buildSkillUrn } from '../domain/urn'
+import {
+    asFlag,
+    asString,
+    asStringArray,
+    asToolList,
+    capitalize,
+    deriveToolTags,
+    stripParentheticals,
+    toTitleCase
+} from '../scan/frontmatter'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
 import type { ParsedSkill, SkillFrontmatter } from './skill-frontmatter.types'
 
@@ -96,10 +106,7 @@ export function deriveTags(fm: SkillFrontmatter): string[] {
     tags.add(isInternal(fm) ? 'internal' : 'user-invocable')
     if (asString(fm.context) === 'fork') tags.add('runs-as-subagent')
 
-    const allowedTools = asString(fm['allowed-tools']) ?? ''
-    if (/WebFetch|WebSearch/.test(allowedTools)) tags.add('uses-web')
-    if (/\bBash\b/.test(allowedTools)) tags.add('uses-bash')
-    if (/\b(Write|Edit)\b/.test(allowedTools)) tags.add('writes-files')
+    for (const tag of deriveToolTags(asToolList(fm['allowed-tools']))) tags.add(tag)
 
     return [...tags].sort()
 }
@@ -156,29 +163,8 @@ export function deriveRepresentativeQueries(
 
 // ----- Helpers -----
 
-/** Coerce an untrusted YAML value into a string (handles Date/number/boolean). */
-function asString(value: unknown): string | undefined {
-    if (typeof value === 'string') return value
-    if (value instanceof Date) return value.toISOString()
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    return undefined
-}
-
-/** Coerce an untrusted YAML value into a string array. */
-function asStringArray(value: unknown): string[] {
-    if (!Array.isArray(value)) return []
-    return value.map(asString).filter((v): v is string => v !== undefined)
-}
-
 function isInternal(fm: SkillFrontmatter): boolean {
-    // Frontmatter is untrusted: a quoted YAML value yields a string, not a bool.
-    // Treat both the real boolean and its string form as the same signal.
-    const notInvocable =
-        fm['user-invocable'] === false || asString(fm['user-invocable']) === 'false'
-    const noModelInvoke =
-        fm['disable-model-invocation'] === true ||
-        asString(fm['disable-model-invocation']) === 'true'
-    return notInvocable || noModelInvoke
+    return asFlag(fm['user-invocable']) === false || asFlag(fm['disable-model-invocation']) === true
 }
 
 function addTag(tags: Set<string>, prefix: string, value: string | undefined): void {
@@ -187,16 +173,4 @@ function addTag(tags: Set<string>, prefix: string, value: string | undefined): v
 
 function setExt(entry: CatalogEntry, key: `x-${string}`, value: string | undefined): void {
     if (value) entry[key] = value
-}
-
-function stripParentheticals(text: string): string {
-    return text.replace(/\s*\([^)]*\)\s*/g, ' ').trim()
-}
-
-function toTitleCase(kebab: string): string {
-    return kebab.split('-').filter(Boolean).map(capitalize).join(' ')
-}
-
-function capitalize(word: string): string {
-    return word.charAt(0).toUpperCase() + word.slice(1)
 }

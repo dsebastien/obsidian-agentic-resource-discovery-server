@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'bun:test'
 import { ArdHttpServer } from './http-server'
 import { createRouter } from './router'
+import { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import { CatalogService } from '../catalog/catalog-service'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
@@ -25,6 +26,7 @@ async function startServer(): Promise<ArdHttpServer> {
         catalog,
         search,
         skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
+        artifacts: new LocalArtifactStore(),
         bearerToken: TOKEN,
         baseUrl: 'http://127.0.0.1',
         enableCors: true
@@ -99,6 +101,7 @@ describe('ArdHttpServer', () => {
             catalog: new CatalogService({ displayName: 'T' }),
             search: new LexicalSearchBackend(),
             skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
+            artifacts: new LocalArtifactStore(),
             bearerToken: TOKEN,
             baseUrl: 'http://127.0.0.1',
             enableCors: true

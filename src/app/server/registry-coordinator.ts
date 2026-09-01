@@ -1,6 +1,8 @@
 import { log } from '../../utils/log'
+import type { AgentScanCache, AgentScanResult } from '../agents/agent-scanner'
 import type { ScanCache, ScanContext, ScanResult } from '../skills/skill-scanner'
 import type { PluginSettings } from '../types/plugin-settings.intf'
+import type { ScanSnapshot } from './registry-controller'
 
 /**
  * Orchestrates the registry lifecycle: what runs when, in what order, and what a
@@ -18,11 +20,8 @@ export interface RegistryPort {
     start(settings: PluginSettings): Promise<void>
     stop(): Promise<void>
     rebuild(settings: PluginSettings): Promise<void>
-    setSkillEntries(
-        settings: PluginSettings,
-        entries: ScanResult['entries'],
-        folders: Map<string, string>
-    ): Promise<void>
+    /** Replace every scanned entry in one step (one rebuild, one index). */
+    setScannedEntries(settings: PluginSettings, snapshot: ScanSnapshot): Promise<void>
     reindex(): Promise<void>
     readonly isRunning: boolean
     readonly port: number | null
@@ -32,8 +31,14 @@ export interface RegistryPort {
 /** The slice of {@link SkillWatcher} the coordinator drives. */
 export interface WatcherPort {
     /** Returns the folders that could not be watched. */
-    start(folders: string[], onChange: () => void): string[]
+    start(targets: WatchTarget[], onChange: () => void): string[]
     stop(): void
+}
+
+/** A folder to watch plus the family that decides which file events matter. */
+export interface WatchTarget {
+    folder: string
+    family: 'skills' | 'subagents'
 }
 
 export interface CoordinatorDeps {
@@ -43,10 +48,18 @@ export interface CoordinatorDeps {
     settings: () => PluginSettings
     /** Configured skill folders, already resolved to absolute paths. */
     skillFolders: () => string[]
-    /** Scan the folders. Injected so filesystem and timers stay out of here. */
+    /** Configured subagent-definition folders, resolved to absolute paths. */
+    agentFolders?: () => string[]
+    /** Scan the skill folders. Injected so filesystem and timers stay out of here. */
     scan: (folders: string[], ctx: ScanContext, cache: ScanCache | undefined) => Promise<ScanResult>
+    /** Scan the subagent folders. Optional: a host without the family skips it. */
+    scanAgents?: (
+        folders: string[],
+        ctx: ScanContext,
+        cache: AgentScanCache | undefined
+    ) => Promise<AgentScanResult>
     /** Called after a successful scan (persist stats, refresh the settings tab). */
-    onScanned: (result: ScanResult) => Promise<void>
+    onScanned: (result: ScanResult, agents: AgentScanResult | null) => Promise<void>
     /** Surface a message to the user (a `Notice` in the plugin). */
     notify: (message: string) => void
 }
@@ -62,8 +75,9 @@ export class RegistryCoordinator {
     /** Set by {@link dispose} so no in-flight/queued op resurrects the server. */
     private disposed = false
 
-    /** Previous scan, reused so an unchanged `SKILL.md` is never re-parsed. */
+    /** Previous scans, reused so an unchanged file is never re-parsed. */
     private scanCache: ScanCache | undefined = undefined
+    private agentScanCache: AgentScanCache | undefined = undefined
 
     constructor(private readonly deps: CoordinatorDeps) {}
 
@@ -117,8 +131,13 @@ export class RegistryCoordinator {
             return
         }
         const folders = this.deps.skillFolders()
-        if (this.deps.settings().watchSkillFolders && folders.length > 0) {
-            const failed = this.deps.watcher.start(folders, () => void this.rescanSkills())
+        const agentFolders = this.deps.agentFolders?.() ?? []
+        if (this.deps.settings().watchSkillFolders && folders.length + agentFolders.length > 0) {
+            const targets = [
+                ...folders.map((folder) => ({ folder, family: 'skills' as const })),
+                ...agentFolders.map((folder) => ({ folder, family: 'subagents' as const }))
+            ]
+            const failed = this.deps.watcher.start(targets, () => void this.rescanSkills())
             if (failed.length > 0) {
                 this.deps.notify(
                     `ARD: could not watch ${failed.length} skill folder(s) for changes. ` +
@@ -179,31 +198,50 @@ export class RegistryCoordinator {
 
     private async doRescanSkills(): Promise<void> {
         const folders = this.deps.skillFolders()
-        if (folders.length === 0) {
+        const agentFolders = this.deps.agentFolders?.() ?? []
+        if (folders.length === 0 && agentFolders.length === 0) {
             return
         }
         const settings = this.deps.settings()
         const port = this.deps.registry.port ?? settings.server.port
+        const ctx: ScanContext = {
+            publisher: settings.publisher,
+            baseUrl: `http://127.0.0.1:${port}`
+        }
         try {
-            const result = await this.deps.scan(
-                folders,
-                { publisher: settings.publisher, baseUrl: `http://127.0.0.1:${port}` },
-                this.scanCache
-            )
+            // Both scans run before anything is published, so a failure in either
+            // leaves the previous catalog fully intact (one snapshot, one rebuild).
+            const result = await this.deps.scan(folders, ctx, this.scanCache)
+            const agents =
+                this.deps.scanAgents && agentFolders.length > 0
+                    ? await this.deps.scanAgents(agentFolders, ctx, this.agentScanCache)
+                    : null
             if (this.disposed) {
                 return // unloaded mid-scan; don't resurrect the registry
             }
             this.scanCache = result.cache
-            await this.deps.registry.setSkillEntries(settings, result.entries, result.folders)
-            await this.deps.onScanned(result)
+            if (agents) this.agentScanCache = agents.cache
+            await this.deps.registry.setScannedEntries(settings, {
+                skills: {
+                    entries: result.entries,
+                    folders: result.folders,
+                    artifacts: result.artifacts
+                },
+                subagents: {
+                    entries: agents?.entries ?? [],
+                    artifacts: agents?.artifacts ?? []
+                }
+            })
+            await this.deps.onScanned(result, agents)
             const dupes = result.duplicateCount > 0 ? `, ${result.duplicateCount} duplicates` : ''
+            const agentNote = agents ? `, ${agents.agentCount} subagents` : ''
             log(
-                `Scanned ${result.skillCount} skills (${result.errorCount} errors${dupes}); ` +
+                `Scanned ${result.skillCount} skills${agentNote} (${result.errorCount} errors${dupes}); ` +
                     `${result.parsedCount} parsed, ${result.reusedCount} unchanged`,
                 'debug'
             )
         } catch (error) {
-            log('Skill scan failed', 'error', error)
+            log('Scan failed', 'error', error)
         }
     }
 }

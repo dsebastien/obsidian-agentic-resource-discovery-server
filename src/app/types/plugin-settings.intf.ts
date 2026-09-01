@@ -87,6 +87,7 @@ export type ServerSettings = z.infer<typeof ServerSettingsSchema>
 
 export const LastScanStatsSchema = z.object({
     skillCount: z.number().default(0).catch(0),
+    agentCount: z.number().default(0).catch(0),
     errorCount: z.number().default(0).catch(0),
     lastScanAt: z.string().optional()
 })
@@ -103,6 +104,13 @@ export const PluginSettingsSchema = z.object({
     skillFolders: z.array(z.string()).default([]).catch([]),
     /** Opt-in filesystem watching of skill folders (off by default; best-effort). */
     watchSkillFolders: z.boolean().default(false).catch(false),
+    /**
+     * Folders of subagent definitions (`<name>.md` with frontmatter; the Claude
+     * Code `.claude/agents/` shape). Opt-in like `skillFolders`: a default would
+     * publish every definition's name, description and tool list through the
+     * unauthenticated catalog on the next upgrade.
+     */
+    agentFolders: z.array(z.string()).default([]).catch([]),
     // Manually-configured resources
     resources: z.array(ManualResourceSchema).default([]).catch([]),
     // Server + search

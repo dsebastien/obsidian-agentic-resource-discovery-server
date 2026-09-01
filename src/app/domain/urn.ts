@@ -16,6 +16,13 @@ export const ARD_URN_PREFIX = 'urn:air'
 export const SKILLS_NAMESPACE = 'skills'
 
 /**
+ * Namespace segment for scanned subagent definitions. Not `agents`: that is
+ * both the ARD `GET /agents` listing endpoint and the namespace manual A2A
+ * agent cards already use.
+ */
+export const SUBAGENTS_NAMESPACE = 'subagents'
+
+/**
  * Matches `urn:air:<publisher>:<segment>(:<segment>)+`. Publisher allows dots
  * (FQDNs) and hyphens; later segments allow dots, underscores, and hyphens. At
  * least one namespaced segment after the publisher is required.
@@ -51,6 +58,10 @@ export const buildUrn = (publisher: string, segments: string[]): string =>
 /** Build the URN for a scanned AI Skill. */
 export const buildSkillUrn = (publisher: string, skillName: string): string =>
     buildUrn(publisher, [SKILLS_NAMESPACE, skillName])
+
+/** Build the URN for a scanned subagent definition. */
+export const buildSubagentUrn = (publisher: string, agentName: string): string =>
+    buildUrn(publisher, [SUBAGENTS_NAMESPACE, agentName])
 
 /** Whether a string is a structurally valid ARD URN. */
 export const isValidArdUrn = (value: string): boolean => ARD_URN_PATTERN.test(value)

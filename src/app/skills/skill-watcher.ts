@@ -23,6 +23,16 @@ export type WatchFn = (
     onEvent: (filename: string | null) => void
 ) => WatchHandle | null
 
+/**
+ * A folder to watch and the family it holds. Skill roots only care about
+ * `SKILL.md` events; subagent roots about top-level `*.md` files. A bare string
+ * is a skill root (the original contract).
+ */
+export interface WatchTarget {
+    folder: string
+    family: 'skills' | 'subagents'
+}
+
 export interface WatcherTimers {
     set: (callback: () => void, ms: number) => unknown
     clear: (handle: unknown) => void
@@ -44,15 +54,17 @@ export class SkillWatcher {
      * folders that could **not** be watched (so the caller can warn the user) —
      * an empty array means every folder is being watched.
      */
-    start(folders: string[], onChange: () => void): string[] {
+    start(targets: Array<string | WatchTarget>, onChange: () => void): string[] {
         this.stop()
         this.onChange = onChange
         const failed: string[] = []
-        for (const folder of folders) {
+        for (const target of targets) {
+            const { folder, family } =
+                typeof target === 'string' ? { folder: target, family: 'skills' as const } : target
             if (!folder.trim()) {
                 continue
             }
-            const handle = this.watchFn(folder, (filename) => this.handleEvent(filename))
+            const handle = this.watchFn(folder, (filename) => this.handleEvent(filename, family))
             if (handle) {
                 this.handles.push(handle)
             } else {
@@ -78,10 +90,10 @@ export class SkillWatcher {
         return this.handles.length > 0
     }
 
-    private handleEvent(filename: string | null): void {
-        // Only SKILL.md changes affect the catalog. A null filename (some
-        // platforms omit it) is treated as "something changed" → rescan.
-        if (filename !== null && !filename.endsWith('SKILL.md')) {
+    private handleEvent(filename: string | null, family: WatchTarget['family']): void {
+        // Only files that feed the catalog trigger a rescan. A null filename
+        // (some platforms omit it) is treated as "something changed" → rescan.
+        if (filename !== null && !affectsCatalog(filename, family)) {
             return
         }
         if (this.timer !== undefined) {
@@ -92,6 +104,18 @@ export class SkillWatcher {
             this.onChange?.()
         }, this.debounceMs)
     }
+}
+
+/**
+ * Skill roots: every `SKILL.md`, however deep. Subagent roots: a `.md` directly
+ * in the root (the scanner is non-recursive, so deeper files are not definitions).
+ */
+export function affectsCatalog(filename: string, family: WatchTarget['family']): boolean {
+    const normalized = filename.replace(/\\/g, '/')
+    if (family === 'skills') {
+        return normalized.endsWith('SKILL.md')
+    }
+    return normalized.endsWith('.md') && !normalized.includes('/')
 }
 
 /** Default fs-watch primitive (recursive; returns null if unsupported). */

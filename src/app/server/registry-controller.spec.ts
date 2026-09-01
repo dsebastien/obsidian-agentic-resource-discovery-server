@@ -134,7 +134,8 @@ describe('RegistryController', () => {
                     url: 'http://127.0.0.1/skills/my-skill/SKILL.md'
                 }
             ],
-            new Map()
+            new Map(),
+            []
         )
 
         expect(controller.catalogSize).toBe(2)
