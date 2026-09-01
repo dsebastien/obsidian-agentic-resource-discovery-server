@@ -155,9 +155,20 @@ async function callTool(params: Record<string, unknown>, deps: McpDeps): Promise
     }
 }
 
+const MAX_SEARCH_LIMIT = 100
+const DEFAULT_SEARCH_LIMIT = 10
+
+function clampLimit(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SEARCH_LIMIT
+    return Math.min(MAX_SEARCH_LIMIT, Math.max(1, Math.trunc(value)))
+}
+
 async function toolSearch(args: Record<string, unknown>, deps: McpDeps): Promise<unknown> {
     const query = typeof args['query'] === 'string' ? args['query'] : ''
-    const limit = typeof args['limit'] === 'number' ? args['limit'] : 10
+    // Same contract as POST /search: an integer in 1..100, default 10. Out-of-range
+    // values are clamped rather than rejected — a tool call is a conversation, not
+    // a wire schema, and "give me 500" should mean "as many as you allow".
+    const limit = clampLimit(args['limit'])
     const filter = args['filter'] as
         | { type?: string[]; tags?: string[]; capabilities?: string[] }
         | undefined

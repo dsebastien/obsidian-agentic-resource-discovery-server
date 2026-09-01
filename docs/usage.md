@@ -63,10 +63,12 @@ Semantic backends answer with lexical-only results while their embeddings are st
 
 ```bash
 curl http://127.0.0.1:27182/status -H "Authorization: Bearer <token>"
-# {"status":"ok","catalog":{"entries":415},"search":{"backend":"semantic","embeddings":{"state":"building","ready":false}}}
+# {"status":"ok","catalog":{"entries":415},"search":{"backend":"semantic","ready":true,"embeddings":{"state":"building","ready":false}}}
 ```
 
-`embeddings` is `null` for the lexical backend (no dense signal to wait for); otherwise `state` is `idle`, `building`, `ready` or `failed`.
+Always HTTP 200 — it is a report, not a probe. `status` is `ok` when search can serve queries and nothing has failed, `degraded` when there is no index yet or the embedding build `failed` (lexical-only until the next rebuild). A `building` embedding index is still `ok`: search works, it just isn't semantic yet. `search.embeddings` is `null` for the lexical backend (no dense signal to wait for); otherwise `state` is `idle`, `building`, `ready` or `failed`.
+
+The MCP `search` tool follows the same `limit` contract as `POST /search` (integer, 1–100, default 10) but clamps out-of-range values instead of rejecting them.
 
 ### Searching
 

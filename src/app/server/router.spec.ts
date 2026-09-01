@@ -79,6 +79,32 @@ async function buildRouter() {
     })
 }
 
+function routerDeps(search: LexicalSearchBackend) {
+    const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
+    catalog.replaceEntries(ENTRIES)
+    return {
+        catalog,
+        search,
+        skillFiles: fakeSkillFiles,
+        bearerToken: TOKEN,
+        baseUrl: BASE_URL,
+        enableCors: true
+    }
+}
+
+/** A lexical backend that records the `limit` each search was asked for. */
+function spyBackend() {
+    const seen: number[] = []
+    class SpyBackend extends LexicalSearchBackend {
+        override async search(request: Parameters<LexicalSearchBackend['search']>[0]) {
+            seen.push(request.limit ?? -1)
+            return super.search(request)
+        }
+    }
+    const spy = new SpyBackend()
+    return { spy, seen }
+}
+
 function req(
     over: Partial<RegistryRequest> & Pick<RegistryRequest, 'method' | 'path'>
 ): RegistryRequest {
@@ -137,31 +163,52 @@ describe('registry router', () => {
         expect(body.status).toBe('ok')
         expect(body.catalog.entries).toBe(3)
         expect(body.search.backend).toBe('lexical')
+        expect(body.search.ready).toBe(true)
         // The lexical backend has no dense signal, so no embedding state at all.
         expect(body.search.embeddings).toBeNull()
     })
 
-    it('reports the embedding state on GET /status when the backend has one', async () => {
-        const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
-        catalog.replaceEntries(ENTRIES)
-        const search = new LexicalSearchBackend()
+    it('tracks the embedding state across requests on GET /status', async () => {
+        // A backend whose state is a real getter (like SemanticSearchBackend),
+        // not a data property snapshotted at construction time.
+        class StatefulBackend extends LexicalSearchBackend {
+            state: 'building' | 'ready' | 'failed' = 'building'
+            get embeddingState() {
+                return this.state
+            }
+        }
+        const search = new StatefulBackend()
         await search.index(ENTRIES)
-        const semanticLike = Object.assign(Object.create(search) as typeof search, {
-            name: 'semantic',
-            embeddingState: 'building' as const
-        })
-        const handleSemantic = createRouter({
-            catalog,
-            search: semanticLike,
-            skillFiles: fakeSkillFiles,
-            bearerToken: TOKEN,
-            baseUrl: BASE_URL,
-            enableCors: true
-        })
-        const res = await handleSemantic(authed({ method: 'GET', path: '/status' }))
-        const body = JSON.parse(res.body as string)
-        expect(body.search.backend).toBe('semantic')
+        const handleSemantic = createRouter({ ...routerDeps(search) })
+
+        let body = JSON.parse(
+            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        )
+        expect(body.status).toBe('ok') // still searchable, just lexical-only
         expect(body.search.embeddings).toEqual({ state: 'building', ready: false })
+
+        search.state = 'ready'
+        body = JSON.parse(
+            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        )
+        expect(body.search.embeddings).toEqual({ state: 'ready', ready: true })
+
+        search.state = 'failed'
+        body = JSON.parse(
+            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        )
+        expect(body.status).toBe('degraded')
+        expect(body.search.embeddings).toEqual({ state: 'failed', ready: false })
+    })
+
+    it('reports degraded on GET /status when the backend has no index yet', async () => {
+        const search = new LexicalSearchBackend() // never indexed
+        const handleCold = createRouter({ ...routerDeps(search) })
+        const body = JSON.parse(
+            (await handleCold(authed({ method: 'GET', path: '/status' }))).body as string
+        )
+        expect(body.status).toBe('degraded')
+        expect(body.search.ready).toBe(false)
     })
 
     it('rejects search without a bearer token', async () => {
@@ -214,31 +261,59 @@ describe('registry router', () => {
         )
     })
 
-    it('caps POST /search results at pageSize', async () => {
-        const res = await handle(
+    it('forwards pageSize to the search backend on POST /search', async () => {
+        const { spy, seen } = spyBackend()
+        const handleSpy = createRouter({ ...routerDeps(spy) })
+        await handleSpy(
             authed({
                 method: 'POST',
                 path: '/search',
-                body: JSON.stringify({ query: { text: 'note' }, pageSize: 1 })
+                body: JSON.stringify({ query: { text: 'anything' }, pageSize: 3 })
             })
         )
-        expect(res.status).toBe(200)
-        expect(JSON.parse(res.body as string).results).toHaveLength(1)
+        expect(seen).toEqual([3])
     })
 
     it('accepts limit as an alias of pageSize on POST /search', async () => {
         // The MCP search tool, /explore and the Code Mode registry all say
         // `limit`; agents carry that name over to REST. Honour it instead of
         // silently returning the default page.
-        const res = await handle(
+        const { spy, seen } = spyBackend()
+        const handleSpy = createRouter({ ...routerDeps(spy) })
+        await handleSpy(
             authed({
                 method: 'POST',
                 path: '/search',
-                body: JSON.stringify({ query: { text: 'note' }, limit: 1 })
+                body: JSON.stringify({ query: { text: 'anything' }, limit: 7 })
             })
         )
-        expect(res.status).toBe(200)
-        expect(JSON.parse(res.body as string).results).toHaveLength(1)
+        expect(seen).toEqual([7])
+    })
+
+    it('lets pageSize win over limit when both are sent', async () => {
+        const { spy, seen } = spyBackend()
+        const handleSpy = createRouter({ ...routerDeps(spy) })
+        await handleSpy(
+            authed({
+                method: 'POST',
+                path: '/search',
+                body: JSON.stringify({ query: { text: 'anything' }, pageSize: 2, limit: 9 })
+            })
+        )
+        expect(seen).toEqual([2])
+    })
+
+    it('defaults to 10 results on POST /search when neither pageSize nor limit is sent', async () => {
+        const { spy, seen } = spyBackend()
+        const handleSpy = createRouter({ ...routerDeps(spy) })
+        await handleSpy(
+            authed({
+                method: 'POST',
+                path: '/search',
+                body: JSON.stringify({ query: { text: 'anything' } })
+            })
+        )
+        expect(seen).toEqual([10])
     })
 
     it('rejects an out-of-range limit on POST /search', async () => {

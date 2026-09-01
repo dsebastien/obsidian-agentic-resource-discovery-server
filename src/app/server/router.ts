@@ -214,14 +214,23 @@ function safeDecode(value: string): string | null {
  * "is search actually semantic yet?" answer. Semantic backends serve
  * lexical-only results while their embeddings build, and a client couldn't
  * tell that apart from the outside before this endpoint existed.
+ *
+ * Always HTTP 200 — it is a report, not a probe. `status` is `ok` when the
+ * backend can serve queries and no secondary index has failed, `degraded`
+ * otherwise (no index yet, or embeddings `failed` → lexical-only for good
+ * until a rebuild). A `building` secondary index is still `ok`: search
+ * works, it just isn't semantic yet — read `search.embeddings` for that.
  */
 function handleStatus(deps: RouterDeps): RegistryResponse {
+    const ready = deps.search.isReady()
     const state = deps.search.embeddingState
+    const degraded = !ready || state === 'failed'
     return json(deps, 200, {
-        status: 'ok',
+        status: degraded ? 'degraded' : 'ok',
         catalog: { entries: deps.catalog.listAll().length },
         search: {
             backend: deps.search.name,
+            ready,
             embeddings: state === undefined ? null : { state, ready: state === 'ready' }
         }
     })

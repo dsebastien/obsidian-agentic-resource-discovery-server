@@ -111,3 +111,39 @@ describe('handleMcpMessage', () => {
         expect(res.error.code).toBe(-32601)
     })
 })
+
+describe('search tool limit contract', () => {
+    it('clamps limit to the same 1..100 integer range as POST /search', async () => {
+        const seen: number[] = []
+        const base = await makeDeps()
+        class SpyBackend extends LexicalSearchBackend {
+            override async search(request: Parameters<LexicalSearchBackend['search']>[0]) {
+                seen.push(request.limit ?? -1)
+                return super.search(request)
+            }
+        }
+        const spy = new SpyBackend()
+        await spy.index(ENTRIES)
+        const spyDeps: McpDeps = { ...base, search: spy }
+        const cases: Array<[unknown, number]> = [
+            [500, 100],
+            [0, 1],
+            [-3, 1],
+            [2.9, 2],
+            ['7', 10],
+            [undefined, 10]
+        ]
+        for (const [given, expected] of cases) {
+            await handleMcpMessage(
+                {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'tools/call',
+                    params: { name: 'search', arguments: { query: 'x', limit: given } }
+                },
+                spyDeps
+            )
+            expect(seen.at(-1)).toBe(expected)
+        }
+    })
+})

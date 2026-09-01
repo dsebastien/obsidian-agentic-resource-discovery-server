@@ -72,6 +72,8 @@ export interface ArdSearchRequest {
     query: { text: string; filter?: FilterObject }
     federation?: 'auto' | 'referrals' | 'none'
     pageSize?: number
+    /** Alias of `pageSize` (the name the MCP tools and /explore use); `pageSize` wins. */
+    limit?: number
     pageToken?: string
 }
 
