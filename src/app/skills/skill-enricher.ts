@@ -4,11 +4,18 @@ import {
     asString,
     asStringArray,
     asToolList,
-    capitalize,
     deriveToolTags,
     stripParentheticals,
     toTitleCase
 } from '../scan/frontmatter'
+import {
+    capabilityQuery,
+    extractTriggerPhrases,
+    finalizeQueries,
+    firstClause,
+    isNovelPhrase,
+    toQueryCase
+} from '../scan/representative-queries'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
 import type { ParsedSkill, SkillFrontmatter } from './skill-frontmatter.types'
 
@@ -112,53 +119,38 @@ export function deriveTags(fm: SkillFrontmatter): string[] {
 }
 
 /**
- * Synthesize 2–5 natural-language example queries from frontmatter. Returns
- * `undefined` when fewer than two can be derived (ARD requires `minItems: 2`).
+ * Synthesize 2–5 example queries phrased the way a user types them: the
+ * description's opening clause in query case, the author's trigger phrases
+ * verbatim (quoted or `Triggers: a, b`, from `when_to_use` then `description`),
+ * the capability as `verb subject` when no query carries it yet, then any
+ * `argument-hint` modes. Returns `undefined` below two (ARD `minItems: 2`).
  */
 export function deriveRepresentativeQueries(
     fm: SkillFrontmatter,
     h1Title: string | null
 ): string[] | undefined {
     const humanName = h1Title ? stripParentheticals(h1Title) : toTitleCase(asString(fm.name) ?? '')
+    const description = asString(fm.description)
     const queries: string[] = []
 
-    // 1. First clause of the description.
-    const firstClause = (asString(fm.description) ?? '').split(/[.!?]/)[0]?.trim()
-    if (firstClause && firstClause.length > 5) {
-        queries.push(firstClause)
-    }
+    const opening = firstClause(description)
+    if (opening) queries.push(toQueryCase(opening))
 
-    // 2. argument-hint modes: --source {a|b}
+    const triggers = extractTriggerPhrases(asString(fm.when_to_use))
+    queries.push(...(triggers.length > 0 ? triggers : extractTriggerPhrases(description)))
+
+    const capability = capabilityQuery(asString(fm.metadata?.capability))
+    if (capability && isNovelPhrase(capability, queries)) queries.push(capability)
+
+    // argument-hint modes: --source {a|b}
     const braceMatch = (asString(fm['argument-hint']) ?? '').match(/\{([^}]+)\}/)
-    if (braceMatch) {
+    if (braceMatch && humanName) {
         for (const mode of braceMatch[1]!.split('|').slice(0, 2)) {
             queries.push(`${humanName} for ${mode.trim()}`)
         }
     }
 
-    // 3. when_to_use trigger phrase.
-    const when = asString(fm.when_to_use) ?? ''
-    if (when) {
-        const quoted = when.match(/"([^"]+)"/)
-        const phrase =
-            quoted?.[1] ??
-            when
-                .replace(/^Use when (the user )?(asks?|wants?)( about| to)?/i, '')
-                .split(/[,;]/)[0]
-                ?.trim()
-        if (phrase && phrase.length > 3) {
-            queries.push(`Help with ${phrase}`)
-        }
-    }
-
-    // 4. Capability verb → human query.
-    const verb = asString(fm.metadata?.capability)?.split('.').pop()
-    if (verb) {
-        queries.push(`${capitalize(verb)} ${humanName}`)
-    }
-
-    const unique = [...new Set(queries.map((q) => q.trim()).filter(Boolean))].slice(0, 5)
-    return unique.length >= 2 ? unique : undefined
+    return finalizeQueries(queries)
 }
 
 // ----- Helpers -----

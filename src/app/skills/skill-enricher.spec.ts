@@ -19,6 +19,21 @@ const analytics: SkillFrontmatter = {
     }
 }
 
+// Real vault frontmatter: the vault's skill listing folds `when_to_use` into the description.
+const checkLinks: SkillFrontmatter = {
+    name: 'osk-vault-check-links',
+    description:
+        'Scans the vault for broken wikilinks and reports them grouped by source file. Read-only — never modifies files - Use when the user says "check links", "find broken links", "broken wikilinks", "dead links", "link check", or "verify links".',
+    metadata: { capability: 'vault.links.check' }
+}
+
+const taskAdd: SkillFrontmatter = {
+    name: 'osk-task-add',
+    description:
+        "Adds an unchecked task to today's plan, for work you intend to do. - Triggers: add task, plan this for today, capture this task. Forward-looking only.",
+    metadata: { capability: 'task.tasknote.create' }
+}
+
 const parsed = (fm: SkillFrontmatter, h1: string | null = null): ParsedSkill => ({
     frontmatter: fm,
     h1Title: h1
@@ -134,5 +149,58 @@ describe('deriveRepresentativeQueries', () => {
 
     it('returns undefined when too little signal exists', () => {
         expect(deriveRepresentativeQueries({ name: 'x', description: 'Hi.' }, null)).toBeUndefined()
+    })
+
+    it('never prefixes "Help with" nor doubles the capability verb with the name', () => {
+        for (const fm of [analytics, checkLinks, taskAdd]) {
+            for (const q of deriveRepresentativeQueries(fm, null) ?? []) {
+                expect(q).not.toMatch(/^help with/i)
+                expect(q).not.toMatch(/\b(\w+) \1\b/i)
+            }
+        }
+    })
+
+    it('keeps an unquoted when_to_use object verbatim, without a "Help with" prefix', () => {
+        const queries = deriveRepresentativeQueries(analytics, 'Analytics') ?? []
+        expect(queries).toContain('web traffic and blog analytics')
+    })
+
+    describe('real vault shapes', () => {
+        it('osk-vault-check-links: quoted trigger phrases verbatim, capability not repeated', () => {
+            const queries = deriveRepresentativeQueries(checkLinks, null) ?? []
+            expect(queries).toEqual([
+                'scans the vault for broken wikilinks and reports them grouped by source file',
+                'check links',
+                'find broken links',
+                'broken wikilinks',
+                'dead links'
+            ])
+            expect(queries).not.toContain('Check Check Links')
+        })
+
+        it('osk-task-add: unquoted "Triggers:" list verbatim, capability as verb + subject', () => {
+            const queries = deriveRepresentativeQueries(taskAdd, null) ?? []
+            expect(queries).toEqual([
+                "adds an unchecked task to today's plan, for work you intend to do",
+                'add task',
+                'plan this for today',
+                'capture this task',
+                'create tasknote'
+            ])
+        })
+
+        it('reads trigger phrases from a separate when_to_use field too', () => {
+            const fm: SkillFrontmatter = {
+                name: 'osk-vault-check-links',
+                description: 'Scans the vault for broken wikilinks. Read-only.',
+                when_to_use: 'Use when the user says "check links" or "dead links".',
+                metadata: { capability: 'vault.links.check' }
+            }
+            expect(deriveRepresentativeQueries(fm, null)).toEqual([
+                'scans the vault for broken wikilinks',
+                'check links',
+                'dead links'
+            ])
+        })
     })
 })

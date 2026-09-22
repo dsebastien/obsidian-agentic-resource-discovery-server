@@ -7,6 +7,7 @@ import {
     stripParentheticals,
     toTitleCase
 } from '../scan/frontmatter'
+import { finalizeQueries, firstClause, toQueryCase } from '../scan/representative-queries'
 import type { ParsedSkill } from '../skills/skill-frontmatter.types'
 import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
 
@@ -96,29 +97,20 @@ function humanName(name: string, h1Title: string | null): string {
 
 /**
  * 2–5 example queries a user might issue for this persona. Deterministic and
- * cheap: the description's first clause, plus "act as" / "review as" phrasings
- * that match how a session asks for a persona. Returns undefined when fewer
- * than two distinct queries can be formed (the spec asks for 2–5 or none).
+ * cheap: the description's first clause in query case, plus "act as" /
+ * "review as" phrasings that match how a session asks for a persona. Returns
+ * undefined when fewer than two distinct queries can be formed (BR-10).
  */
 export function deriveAgentQueries(
     displayName: string,
     description: string | undefined
 ): string[] | undefined {
     const queries: string[] = []
-    const firstClause = (description ?? '').split(/[.!?]/)[0]?.trim()
-    if (firstClause && firstClause.length > 5) {
-        // Sentence-case → query-case, but leave acronyms ("CRM operator") alone.
-        const second = firstClause.charAt(1)
-        const lowered =
-            second && second === second.toLowerCase()
-                ? firstClause.charAt(0).toLowerCase() + firstClause.slice(1)
-                : firstClause
-        queries.push(lowered)
-    }
+    const opening = firstClause(description)
+    if (opening) queries.push(toQueryCase(opening))
     if (displayName) {
         queries.push(`act as ${displayName.toLowerCase()}`)
         queries.push(`review this as ${displayName.toLowerCase()}`)
     }
-    const unique = [...new Set(queries.map((q) => q.trim()).filter(Boolean))].slice(0, 5)
-    return unique.length >= 2 ? unique : undefined
+    return finalizeQueries(queries)
 }
