@@ -90,7 +90,7 @@ export async function runSandbox(
 
         const evalResult = context.evalCode(wrapped)
         if (evalResult.error) {
-            const message = context.dump(evalResult.error)
+            const message: unknown = context.dump(evalResult.error)
             evalResult.error.dispose()
             return { ok: false, error: stringifyError(message) }
         }
@@ -103,7 +103,7 @@ export async function runSandbox(
                 return { ok: false, error: 'Execution timed out.' }
             }
             if (jobs.error) {
-                const message = context.dump(jobs.error)
+                const message: unknown = context.dump(jobs.error)
                 jobs.error.dispose()
                 return { ok: false, error: stringifyError(message) }
             }
@@ -129,7 +129,7 @@ export async function runSandbox(
 function evalOrThrow(context: ReturnType<QuickJSWASMModule['newContext']>, code: string): void {
     const result = context.evalCode(code)
     if (result.error) {
-        const message = context.dump(result.error)
+        const message: unknown = context.dump(result.error)
         result.error.dispose()
         throw new Error(stringifyError(message))
     }
@@ -141,7 +141,7 @@ function readGlobalString(
     name: string
 ): string | null {
     const handle = context.getProp(context.global, name)
-    const value = context.dump(handle)
+    const value: unknown = context.dump(handle)
     handle.dispose()
     return typeof value === 'string' ? value : null
 }

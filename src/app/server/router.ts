@@ -272,8 +272,9 @@ function catalogCounts(deps: RouterDeps): Record<string, number> {
     let subagents = 0
     const all = deps.catalog.listAll()
     for (const entry of all) {
-        if (entry.type === ArdMediaType.AiSkill) skills++
-        else if (entry.type === ArdMediaType.AiAgent) subagents++
+        // entry.type is any IANA media type string, not only the enum's.
+        if (entry.type === (ArdMediaType.AiSkill as string)) skills++
+        else if (entry.type === (ArdMediaType.AiAgent as string)) subagents++
     }
     return { entries: all.length, skills, subagents, manual: all.length - skills - subagents }
 }

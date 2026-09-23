@@ -791,7 +791,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     render: (setting): void => {
                         setting.addButton((button) =>
                             button
-                                .setWarning()
+                                .setDestructive()
                                 .setButtonText('Remove')
                                 .onClick(async () => {
                                     await this.plugin.updateSettings((draft) => {

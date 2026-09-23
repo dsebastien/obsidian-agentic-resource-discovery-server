@@ -82,21 +82,25 @@ export class LexicalSearchBackend implements SearchBackend {
         return new MiniSearch<IndexDoc>({ ...LEXICAL_INDEX_CONFIG, fields: [...SEARCH_FIELDS] })
     }
 
-    async index(entries: CatalogEntry[]): Promise<void> {
+    // Synchronous work behind the SearchBackend's Promise contract. Every
+    // caller awaits it inside an async function, so a throw still surfaces
+    // as that caller's rejection.
+    index(entries: CatalogEntry[]): Promise<void> {
         this.mini = LexicalSearchBackend.createIndex()
         this.entries = new Map(entries.map((entry) => [entry.identifier, entry]))
         this.mini.addAll(entries.map(toIndexDoc))
         this.ready = true
+        return Promise.resolve()
     }
 
     isReady(): boolean {
         return this.ready
     }
 
-    async search(request: SearchRequest): Promise<SearchResult[]> {
+    search(request: SearchRequest): Promise<SearchResult[]> {
         const query = request.query.trim()
         if (!query) {
-            return []
+            return Promise.resolve([])
         }
         const limit = request.limit ?? 10
         const raw = this.mini.search(query)
@@ -115,6 +119,6 @@ export class LexicalSearchBackend implements SearchBackend {
                 break
             }
         }
-        return results
+        return Promise.resolve(results)
     }
 }
