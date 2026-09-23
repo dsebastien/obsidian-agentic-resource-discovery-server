@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.2.1 (2026-09-23)
+
+### Bug Fixes
+
+- **plugin:** page through search results and answer federation honestly
+
 ## 1.2.0 (2026-09-23)
 
 ### Features

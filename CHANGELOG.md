@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.0...1.2.1) (2026-09-23)
+
+### Bug Fixes
+
+* **plugin:** page through search results and answer federation honestly ([a59063d](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/a59063d4213055c56a127a77a797aacf53cc4e20))
+
 ## [1.2.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.1.0...1.2.0) (2026-09-23)
 
 ### Features
@@ -131,6 +137,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 
