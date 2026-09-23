@@ -21,6 +21,7 @@ This document defines the core business rules. These rules MUST be respected in 
 - **BR-8 — Exactly one of `url | data`** per catalog entry. Entries that can satisfy neither are skipped.
 - **BR-9 — Score is relevance only.** The `0–100` search score is relevance, explicitly NOT a trust/safety/compliance signal.
 - **BR-10 — `representativeQueries` is 2–5 or absent.** If fewer than two can be derived, the field is omitted rather than emitted invalid.
+- **BR-10a — Honest paging and federation.** `pageToken` (on `/search` and `/agents`) is an opaque offset into one ranked/listed sequence; a page carries a token only when more results remain, and a token the registry did not issue is a `400 INVALID_ARGUMENT`, never a silent restart at page one. The registry has no upstreams (ARD §5.4): `none` and `auto` answer from the local index, `referrals` adds an empty `referrals` array. Never claim federated results.
 - **BR-11 — URN format.** Identifiers match `urn:air:<publisher>(:<segment>)+`; the default publisher is `obsidian` (configurable to a real FQDN for external publishing). Scanned families use fixed namespaces: `skills`, `subagents`.
 
 ## Robustness

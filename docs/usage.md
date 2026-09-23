@@ -47,18 +47,18 @@ Two buttons there save you assembling anything by hand:
 
 ## The endpoints
 
-| Method & path                      | Auth   | Purpose                                                                                                                                                       |
-| ---------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /.well-known/ai-catalog.json` | none   | The full ARD catalog (`ai-catalog.json`).                                                                                                                     |
-| `GET /health`                      | none   | Liveness check (`{"status":"ok"}`).                                                                                                                           |
-| `GET /status`                      | bearer | Readiness: catalog size, search backend, and whether semantic embeddings are built yet.                                                                       |
-| `POST /search`                     | bearer | Natural-language search; ranked results with a `score` (0–100, relevance only). `pageSize` (or its alias `limit`, max 100, default 10) caps the result count. |
-| `POST /explore`                    | bearer | Facet counts (`type`, `tags`, `capabilities`) over the catalog.                                                                                               |
-| `GET /agents`                      | bearer | Deterministic, paginated listing (`?pageSize=`, `?pageToken=`, `?type=`, `?tags=`, `?capabilities=`).                                                         |
-| `GET /skills/<name>`               | bearer | Manifest of a skill's servable files.                                                                                                                         |
-| `GET /skills/<name>/<path>`        | bearer | A skill's `SKILL.md` or a bundled asset.                                                                                                                      |
-| `GET /subagents/<name>.md`         | bearer | A subagent definition (frontmatter + system prompt).                                                                                                          |
-| `POST /mcp`                        | bearer | MCP endpoint (JSON-RPC 2.0).                                                                                                                                  |
+| Method & path                      | Auth   | Purpose                                                                                                                                                                                       |
+| ---------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /.well-known/ai-catalog.json` | none   | The full ARD catalog (`ai-catalog.json`).                                                                                                                                                     |
+| `GET /health`                      | none   | Liveness check (`{"status":"ok"}`).                                                                                                                                                           |
+| `GET /status`                      | bearer | Readiness: catalog size, search backend, and whether semantic embeddings are built yet.                                                                                                       |
+| `POST /search`                     | bearer | Natural-language search; ranked results with a `score` (0–100, relevance only). `pageSize` (or its alias `limit`, max 100, default 10) sets the page size; `pageToken` fetches the next page. |
+| `POST /explore`                    | bearer | Facet counts (`type`, `tags`, `capabilities`) over the catalog.                                                                                                                               |
+| `GET /agents`                      | bearer | Deterministic, paginated listing (`?pageSize=`, `?pageToken=`, `?type=`, `?tags=`, `?capabilities=`).                                                                                         |
+| `GET /skills/<name>`               | bearer | Manifest of a skill's servable files.                                                                                                                                                         |
+| `GET /skills/<name>/<path>`        | bearer | A skill's `SKILL.md` or a bundled asset.                                                                                                                                                      |
+| `GET /subagents/<name>.md`         | bearer | A subagent definition (frontmatter + system prompt).                                                                                                                                          |
+| `POST /mcp`                        | bearer | MCP endpoint (JSON-RPC 2.0).                                                                                                                                                                  |
 
 ### Is search ready?
 
@@ -101,6 +101,20 @@ Response:
 ```
 
 Each result's `url` points back at the registry, so an agent can `GET` the skill body next.
+
+**Paging.** When more results remain, the response carries a `pageToken`. Send the same request again with that `pageToken` to get the next page of the same ranked list; the last page has no `pageToken`. Treat the token as opaque and pass it back unchanged: a token the registry did not issue is refused with `400 INVALID_ARGUMENT` rather than silently restarting at page one. `GET /agents` refuses a bad `pageToken` the same way.
+
+```bash
+curl -X POST http://127.0.0.1:27182/search \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"query":{"text":"write a conventional commit"},"pageSize":5,"pageToken":"NQ=="}'
+```
+
+**Federation.** This registry is local-only: it knows no other registries. The ARD `federation` field is accepted and answered honestly:
+
+- `none` — search this registry only.
+- `auto` (the ARD default, also used when the field is omitted) — merges upstream results with local ones; with no upstreams, that is the local results.
+- `referrals` — local results plus a `referrals` array, which is always empty (`"referrals": []`): there is no other registry to point you to.
 
 ### Exploring what's available
 

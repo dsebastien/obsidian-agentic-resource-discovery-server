@@ -318,6 +318,8 @@ describe('registry router', () => {
         )
     })
 
+    // The backend is asked for one hit past the page: that extra hit is how the
+    // router knows another page exists (and so whether to emit a pageToken).
     it('forwards pageSize to the search backend on POST /search', async () => {
         const { spy, seen } = spyBackend()
         const handleSpy = createRouter({ ...routerDeps(spy) })
@@ -328,7 +330,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { text: 'anything' }, pageSize: 3 })
             })
         )
-        expect(seen).toEqual([3])
+        expect(seen).toEqual([4])
     })
 
     it('accepts limit as an alias of pageSize on POST /search', async () => {
@@ -344,7 +346,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { text: 'anything' }, limit: 7 })
             })
         )
-        expect(seen).toEqual([7])
+        expect(seen).toEqual([8])
     })
 
     it('lets pageSize win over limit when both are sent', async () => {
@@ -357,7 +359,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { text: 'anything' }, pageSize: 2, limit: 9 })
             })
         )
-        expect(seen).toEqual([2])
+        expect(seen).toEqual([3])
     })
 
     it('defaults to 10 results on POST /search when neither pageSize nor limit is sent', async () => {
@@ -370,7 +372,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { text: 'anything' } })
             })
         )
-        expect(seen).toEqual([10])
+        expect(seen).toEqual([11])
     })
 
     it('rejects an out-of-range limit on POST /search', async () => {
@@ -383,6 +385,150 @@ describe('registry router', () => {
         )
         expect(res.status).toBe(400)
         expect(JSON.parse(res.body as string).message).toContain('limit')
+    })
+
+    describe('POST /search paging and federation', () => {
+        /** Five entries that all match "paging", so the ranked list spans pages. */
+        const PAGED: CatalogEntry[] = Array.from({ length: 5 }, (_, i) => ({
+            identifier: `urn:air:obsidian:skills:paging-${i}`,
+            displayName: `Paging skill ${i}`,
+            type: ArdMediaType.AiSkill,
+            url: `${BASE_URL}/skills/paging-${i}/SKILL.md`,
+            description: `Paging fixture ${'paging '.repeat(i + 1)}`
+        }))
+
+        async function pagedRouter() {
+            const search = new LexicalSearchBackend()
+            await search.index(PAGED)
+            const catalog = new CatalogService({ displayName: 'Test', identifier: 'obsidian' })
+            catalog.replaceEntries(PAGED)
+            return createRouter({ ...routerDeps(search), catalog })
+        }
+
+        async function searchPage(
+            router: Awaited<ReturnType<typeof pagedRouter>>,
+            extra: Record<string, unknown>
+        ) {
+            const res = await router(
+                authed({
+                    method: 'POST',
+                    path: '/search',
+                    body: JSON.stringify({ query: { text: 'paging' }, ...extra })
+                })
+            )
+            const body = JSON.parse(res.body as string) as SearchBody
+            return { status: res.status, body }
+        }
+
+        interface SearchBody {
+            results: { identifier: string }[]
+            referrals?: unknown[]
+            pageToken?: string
+            errorCode?: string
+            message?: string
+        }
+
+        const ids = (body: SearchBody): string[] => body.results.map((r) => r.identifier)
+
+        it('walks the ranked list page by page without overlap', async () => {
+            const router = await pagedRouter()
+            const all = await searchPage(router, { pageSize: 5 })
+            expect(all.body.results).toHaveLength(5)
+            expect(all.body.pageToken).toBeUndefined()
+
+            const first = await searchPage(router, { pageSize: 2 })
+            expect(first.status).toBe(200)
+            expect(first.body.pageToken).toBeDefined()
+            const second = await searchPage(router, {
+                pageSize: 2,
+                pageToken: first.body.pageToken
+            })
+            expect(second.status).toBe(200)
+            expect(second.body.results).toHaveLength(2)
+            expect(ids(second.body).some((id) => ids(first.body).includes(id))).toBe(false)
+            // Same ranked list, next slice.
+            expect([...ids(first.body), ...ids(second.body)]).toEqual(ids(all.body).slice(0, 4))
+        })
+
+        it('omits pageToken on the last page', async () => {
+            const router = await pagedRouter()
+            const first = await searchPage(router, { pageSize: 2 })
+            const second = await searchPage(router, {
+                pageSize: 2,
+                pageToken: first.body.pageToken
+            })
+            const third = await searchPage(router, {
+                pageSize: 2,
+                pageToken: second.body.pageToken
+            })
+            expect(third.body.results).toHaveLength(1)
+            expect(third.body.pageToken).toBeUndefined()
+        })
+
+        it('omits pageToken when the results fill the page exactly', async () => {
+            const router = await pagedRouter()
+            const first = await searchPage(router, { pageSize: 3 })
+            const second = await searchPage(router, {
+                pageSize: 2,
+                pageToken: first.body.pageToken
+            })
+            expect(second.body.results).toHaveLength(2)
+            expect(second.body.pageToken).toBeUndefined()
+        })
+
+        it('honours limit as the page size when paging', async () => {
+            const router = await pagedRouter()
+            const first = await searchPage(router, { limit: 4 })
+            expect(first.body.results).toHaveLength(4)
+            const second = await searchPage(router, { limit: 4, pageToken: first.body.pageToken })
+            expect(second.body.results).toHaveLength(1)
+        })
+
+        it.each(['garbage!!', 'LTE=', Buffer.from('abc').toString('base64'), 'MDA3'])(
+            'rejects the page token %p with a 400',
+            async (pageToken) => {
+                const router = await pagedRouter()
+                const res = await searchPage(router, { pageToken })
+                expect(res.status).toBe(400)
+                expect(res.body.errorCode).toBe('INVALID_ARGUMENT')
+                expect(res.body.message).toContain('pageToken')
+            }
+        )
+
+        it('treats federation "none" as a plain local search', async () => {
+            const router = await pagedRouter()
+            const plain = await searchPage(router, {})
+            const none = await searchPage(router, { federation: 'none' })
+            expect(none.status).toBe(200)
+            expect(none.body).toEqual(plain.body)
+            expect(none.body.referrals).toBeUndefined()
+        })
+
+        it('answers federation "auto" from the local index (no upstream registries)', async () => {
+            const router = await pagedRouter()
+            const plain = await searchPage(router, {})
+            const auto = await searchPage(router, { federation: 'auto' })
+            expect(auto.status).toBe(200)
+            expect(auto.body).toEqual(plain.body)
+            expect(auto.body.referrals).toBeUndefined()
+        })
+
+        it('returns an empty referrals array for federation "referrals"', async () => {
+            const router = await pagedRouter()
+            const plain = await searchPage(router, { pageSize: 2 })
+            const referrals = await searchPage(router, { federation: 'referrals', pageSize: 2 })
+            expect(referrals.status).toBe(200)
+            expect(referrals.body.referrals).toEqual([])
+            expect(referrals.body.results).toEqual(plain.body.results)
+            expect(referrals.body.pageToken).toBe(plain.body.pageToken)
+        })
+
+        it('rejects an unknown federation mode', async () => {
+            const router = await pagedRouter()
+            const res = await searchPage(router, { federation: 'everywhere' })
+            expect(res.status).toBe(400)
+            expect(res.body.message).toContain('federation')
+        })
     })
 
     it('rejects a malformed search body with 400 and an error code', async () => {
@@ -594,6 +740,18 @@ describe('registry router', () => {
         )
         const secondBody = JSON.parse(second.body as string)
         expect(secondBody.items[0].identifier).not.toBe(firstBody.items[0].identifier)
+    })
+
+    it('rejects a garbled GET /agents page token with 400 instead of restarting at page one', async () => {
+        const res = await handle(
+            authed({
+                method: 'GET',
+                path: '/agents',
+                query: new URLSearchParams({ pageSize: '1', pageToken: 'garbage!!' })
+            })
+        )
+        expect(res.status).toBe(400)
+        expect(JSON.parse(res.body as string).errorCode).toBe('INVALID_ARGUMENT')
     })
 
     it('404s an unknown route', async () => {

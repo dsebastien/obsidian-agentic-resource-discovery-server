@@ -9,6 +9,7 @@ import type { SkillFileService } from '../skills/skill-file-server'
 import {
     ArdMediaType,
     type ArdErrorResponse,
+    type ArdSearchResponse,
     type CatalogEntry,
     type SearchResultItem
 } from '../types/ard.types'
@@ -292,18 +293,40 @@ async function handleSearch(deps: RouterDeps, req: RegistryRequest): Promise<Reg
         return errorResponse(deps, 400, 'INVALID_ARGUMENT', `Invalid search request (${where}).`)
     }
 
-    const { query, pageSize, limit } = result.data
+    const { query, pageSize, limit, federation } = result.data
+    const offset = decodePageToken(result.data.pageToken)
+    if (offset === null) {
+        return invalidPageToken(deps)
+    }
+    const size = pageSize ?? limit ?? DEFAULT_SEARCH_LIMIT
+
+    // Paging slices one ranked list: ask the backend for everything up to the
+    // end of this page plus one, so a trailing hit tells us another page exists.
+    // Every backend's ranking is prefix-stable across `limit`, which is what
+    // makes page N+1 continue page N without overlap.
     const hits = await deps.search.search({
         query: query.text,
-        limit: pageSize ?? limit ?? DEFAULT_SEARCH_LIMIT,
+        limit: offset + size + 1,
         filter: toBackendFilter(query.filter)
     })
-    const results: SearchResultItem[] = hits.map((hit) => ({
+    const results: SearchResultItem[] = hits.slice(offset, offset + size).map((hit) => ({
         ...hit.entry,
         score: hit.score,
         source: deps.baseUrl
     }))
-    return json(deps, 200, { results })
+    const nextOffset = offset + size
+    const response: ArdSearchResponse = { results }
+    // Federation (ARD §5.4): this registry has no upstream registries. `none`
+    // and `auto` both answer from the local index (auto = local merged with
+    // zero upstreams). `referrals` gets an explicit, empty `referrals` array so
+    // the client knows there is nowhere else to go rather than guessing.
+    if (federation === 'referrals') {
+        response.referrals = []
+    }
+    if (hits.length > nextOffset) {
+        response.pageToken = encodePageToken(nextOffset)
+    }
+    return json(deps, 200, response)
 }
 
 /**
@@ -385,6 +408,9 @@ function handleAgents(deps: RouterDeps, req: RegistryRequest): RegistryResponse 
         MAX_PAGE_SIZE
     )
     const offset = decodePageToken(req.query.get('pageToken'))
+    if (offset === null) {
+        return invalidPageToken(deps)
+    }
     const page = items.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
     const pageToken = nextOffset < total ? encodePageToken(nextOffset) : undefined
@@ -489,10 +515,28 @@ function encodePageToken(offset: number): string {
     return Buffer.from(String(offset), 'utf-8').toString('base64')
 }
 
-function decodePageToken(token: string | null): number {
-    if (!token) {
+/**
+ * Decode an opaque page token back to its offset. Absent → 0. Anything that is
+ * not a token this registry issued (not canonical base64 of a non-negative
+ * integer) → `null`, which callers turn into a 400: silently restarting at the
+ * first page would hand a paging client duplicates it cannot detect.
+ */
+function decodePageToken(token: string | null | undefined): number | null {
+    if (token === null || token === undefined || token === '') {
         return 0
     }
-    const decoded = Number.parseInt(Buffer.from(token, 'base64').toString('utf-8'), 10)
-    return Number.isInteger(decoded) && decoded >= 0 ? decoded : 0
+    const decoded = Buffer.from(token, 'base64').toString('utf-8')
+    if (!/^\d{1,15}$/.test(decoded) || encodePageToken(Number(decoded)) !== token) {
+        return null
+    }
+    return Number(decoded)
+}
+
+function invalidPageToken(deps: RouterDeps): RegistryResponse {
+    return errorResponse(
+        deps,
+        400,
+        'INVALID_ARGUMENT',
+        'Invalid pageToken: pass back the pageToken from a previous response unchanged.'
+    )
 }

@@ -78,10 +78,15 @@ export type FilterObject = Record<string, string | string[]>
 
 export interface ArdSearchRequest {
     query: { text: string; filter?: FilterObject }
+    /**
+     * ARD §5.4. This registry has no upstreams: `none` and `auto` (the spec
+     * default) search the local index; `referrals` adds an empty `referrals`.
+     */
     federation?: 'auto' | 'referrals' | 'none'
     pageSize?: number
     /** Alias of `pageSize` (the name the MCP tools and /explore use); `pageSize` wins. */
     limit?: number
+    /** The `pageToken` of a previous response, passed back unchanged. */
     pageToken?: string
 }
 
@@ -93,8 +98,22 @@ export interface SearchResultItem extends CatalogEntry {
     source: string
 }
 
+/** A pointer to another registry, returned in `referrals` federation mode. */
+export interface RegistryReferral {
+    identifier: string
+    displayName: string
+    type: string
+    url: string
+}
+
 export interface ArdSearchResponse {
     results: SearchResultItem[]
+    /**
+     * Present only for `federation: "referrals"`. Always empty here: this
+     * registry is local-only and knows no other registries (ARD §5.4).
+     */
+    referrals?: RegistryReferral[]
+    /** Opaque token for the next page; absent on the last page. */
     pageToken?: string
 }
 

@@ -29,7 +29,7 @@ settings (skill folders, resources)
                                                                          ▼
    GET /.well-known/ai-catalog.json ─ CatalogService.toCatalog()
    GET /status                      ─ catalog size + SearchBackend.name/embeddingState (readiness)
-   POST /search                     ─ SearchBackend.search() → ARD results
+   POST /search                     ─ SearchBackend.search() → ARD results (offset-paged, local-only federation)
    POST /explore                    ─ facet counts (type/tags/capabilities) over the same set
    GET /agents                      ─ CatalogService.listAll() (paged, filterable)
    GET /skills/<name>/<path>        ─ FsSkillFileService (traversal-safe)
