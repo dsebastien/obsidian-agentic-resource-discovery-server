@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.1.0...1.2.0) (2026-09-23)
+
+### Features
+
+* **plugin:** keep the vault's .mcp.json in sync with the server ([0adce36](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/0adce361d5d00ca13f7b50ba57f661465cc8f538))
+
 ## [1.1.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.0.0...1.1.0) (2026-09-23)
 
 ### Features
@@ -125,6 +131,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 

@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.2.0 (2026-09-23)
+
+### Features
+
+- **plugin:** keep the vault's .mcp.json in sync with the server
+
 ## 1.1.0 (2026-09-23)
 
 ### Features
