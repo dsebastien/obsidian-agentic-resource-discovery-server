@@ -117,6 +117,13 @@ export const PluginSettingsSchema = z.object({
     server: ServerSettingsSchema.default(() => ServerSettingsSchema.parse({})).catch(() =>
         ServerSettingsSchema.parse({})
     ),
+    /**
+     * Opt-in: keep this server's entry (port + bearer token) in the vault's
+     * project `.mcp.json`, so Claude Code etc. connect with no manual setup.
+     */
+    syncProjectMcpConfig: z.boolean().default(false).catch(false),
+    /** Key of the registry entry under `mcpServers` in `.mcp.json`. */
+    projectMcpServerName: z.string().default('ard').catch('ard'),
     searchBackend: SearchBackendConfigSchema.default(() =>
         SearchBackendConfigSchema.parse({})
     ).catch(() => SearchBackendConfigSchema.parse({})),

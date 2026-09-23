@@ -117,6 +117,10 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 return s.catalogDisplayName
             case 'watchSkillFolders':
                 return s.watchSkillFolders
+            case 'syncProjectMcpConfig':
+                return s.syncProjectMcpConfig
+            case 'projectMcpServerName':
+                return s.projectMcpServerName
             case 'searchBackend.kind':
                 return s.searchBackend.kind
             case 'searchBackend.embeddingServerUrl':
@@ -192,6 +196,22 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 })
                 return
             }
+            case 'syncProjectMcpConfig': {
+                if (typeof value !== 'boolean') {
+                    throw new Error('Expected a boolean value.')
+                }
+                const sync = value
+                // Turning it on writes .mcp.json right away (see updateSettings).
+                await write((draft) => {
+                    draft.syncProjectMcpConfig = sync
+                })
+                return
+            }
+            case 'projectMcpServerName':
+                await write((draft) => {
+                    draft.projectMcpServerName = ArdServerSettingTab.asString(value).trim() || 'ard'
+                })
+                return
             case 'searchBackend.kind': {
                 const kind = SEARCH_BACKEND_KINDS.find((k) => k === value)
                 if (!kind) {
@@ -462,6 +482,21 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     render: (setting): void => {
                         this.renderBearerTokenControls(setting)
                     }
+                },
+                {
+                    name: 'Keep .mcp.json in sync',
+                    desc:
+                        "Write this server's entry (address and bearer token) into the .mcp.json file at the " +
+                        'root of the vault, so Claude Code and other MCP clients that read project config ' +
+                        'connect without manual setup. Updated when the port or token changes; other ' +
+                        'servers in the file are left untouched. The file contains the bearer token: ' +
+                        'if you publish or share your vault root, keep .mcp.json out of it.',
+                    control: { type: 'toggle', key: 'syncProjectMcpConfig' }
+                },
+                {
+                    name: 'Server name in .mcp.json',
+                    desc: 'Key this server is listed under in .mcp.json. Renaming leaves the old entry in place.',
+                    control: { type: 'text', key: 'projectMcpServerName', placeholder: 'ard' }
                 },
                 {
                     name: 'Publisher',

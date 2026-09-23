@@ -9,14 +9,26 @@ All settings live in the plugin's settings tab, grouped into five sections.
 
 ## Server
 
-| Setting      | Type             | Default                                       | Description                                                                                                             |
-| ------------ | ---------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Port         | number           | `27182`                                       | The registry listens on `127.0.0.1` at this port (1024–65535).                                                          |
-| Bearer token | text (read-only) | generated on first run                        | Required on every request except the public catalog. Use **Copy** / **Regenerate**.                                     |
-| Publisher    | text             | `obsidian`                                    | The publisher segment of every URN (`urn:air:<publisher>:…`). Set a real domain you own if you ever publish externally. |
-| Catalog name | text             | `Personal Obsidian Agentic Resource Registry` | Display name in the catalog's `host` block.                                                                             |
+| Setting                  | Type             | Default                                       | Description                                                                                                             |
+| ------------------------ | ---------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Port                     | number           | `27182`                                       | The registry listens on `127.0.0.1` at this port (1024–65535).                                                          |
+| Bearer token             | text (read-only) | generated on first run                        | Required on every request except the public catalog. Use **Copy** / **Regenerate**.                                     |
+| Keep .mcp.json in sync   | toggle           | off                                           | Writes this server's entry into the `.mcp.json` file at the vault root. See below.                                      |
+| Server name in .mcp.json | text             | `ard`                                         | The name this server is listed under in `.mcp.json`.                                                                    |
+| Publisher                | text             | `obsidian`                                    | The publisher segment of every URN (`urn:air:<publisher>:…`). Set a real domain you own if you ever publish externally. |
+| Catalog name             | text             | `Personal Obsidian Agentic Resource Registry` | Display name in the catalog's `host` block.                                                                             |
 
 The **bind address is always `127.0.0.1`** and is not user-configurable — the registry is never exposed to the network.
+
+### Keep .mcp.json in sync
+
+Claude Code (and other MCP clients that read project config) looks for a `.mcp.json` file in the folder you start it from. Turn this on and the plugin keeps an entry for this server in the `.mcp.json` at the root of your vault, so running `claude` in the vault finds your skills with no setup.
+
+- It writes right away when you turn it on, when the plugin loads, and whenever the port or the bearer token changes (including **Regenerate**).
+- Only its own entry is touched. Other servers and settings in the file stay as they are, and the file is only rewritten when something actually changed.
+- If `.mcp.json` exists but isn't valid JSON, the plugin leaves it alone and shows a notice once.
+- Turning it off leaves the file as it is; delete the entry yourself if you no longer want it.
+- **The file contains your bearer token.** If you publish or share your vault root (a public git repo, a published folder), keep `.mcp.json` out of it.
 
 ## Skill folders
 

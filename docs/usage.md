@@ -35,6 +35,7 @@ Two buttons there save you assembling anything by hand:
     {
         "mcpServers": {
             "obsidian-ard": {
+                "type": "http",
                 "url": "http://127.0.0.1:27182/mcp",
                 "headers": { "Authorization": "Bearer <your-token>" }
             }
@@ -135,7 +136,7 @@ curl "http://127.0.0.1:27182/agents?tags=git,notes&type=application/ai-skill&pag
 
 ### Using it as an MCP server
 
-Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: Bearer <token>` — or just use **Copy MCP config** in the settings **Status** panel. The tools:
+Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: Bearer <token>` — or just use **Copy MCP config** in the settings **Status** panel. For Claude Code run from the vault folder, turn on **Keep .mcp.json in sync** (see [Configuration](configuration.md#server)) and the plugin writes that entry into the vault's `.mcp.json` for you. The tools:
 
 - **`search`** — natural-language search, returns ranked metadata (no bodies). `filter.type` selects a family: `application/ai-skill` for skills, `application/ai-agent+md` for subagent definitions.
 - **`get_resource`** — fetch one entry by URN, optionally with its body (the `SKILL.md` of a skill, the definition file of a subagent). The body is resolved by URN, never from the entry's URL. **`get_skill`** is kept as an alias.

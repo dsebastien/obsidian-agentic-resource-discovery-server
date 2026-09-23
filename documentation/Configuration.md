@@ -6,21 +6,23 @@ Technical reference for the plugin's settings. The user-facing version is in [`d
 
 `parsePluginSettings(raw): PluginSettings` is the single entry point. It never throws: non-object input yields defaults, and each field has a `.catch(default)` so one corrupt value falls back without discarding valid siblings.
 
-| Field                | Type                    | Default                                         | Notes                                                                       |
-| -------------------- | ----------------------- | ----------------------------------------------- | --------------------------------------------------------------------------- |
-| `publisher`          | string                  | `"obsidian"`                                    | URN publisher segment.                                                      |
-| `catalogDisplayName` | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                 |
-| `catalogIdentifier`  | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                    |
-| `skillFolders`       | string[]                | `[]`                                            | Absolute or vault-relative folders to scan.                                 |
-| `watchSkillFolders`  | boolean                 | `false`                                         | Opt-in fs watching of skill folders; debounced rescan on `SKILL.md` change. |
-| `resources`          | ManualResource[]        | `[]`                                            | Manually configured non-skill entries.                                      |
-| `server.port`        | int 1024–65535          | `27182`                                         | Listen port.                                                                |
-| `server.bindAddress` | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                               |
-| `server.bearerToken` | string                  | `""` → generated                                | 64 hex chars once generated.                                                |
-| `server.enableCors`  | boolean                 | `true`                                          | `Access-Control-Allow-Origin: *`.                                           |
-| `searchBackend.kind` | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `hosted-api`.                                 |
-| `searchBackend.*`    | —                       | —                                               | Embedding server URL/model, or hosted API provider/base URL/model/key.      |
-| `lastScanStats`      | object                  | `{0,0}`                                         | Internal: last scan counts + timestamp.                                     |
+| Field                  | Type                    | Default                                         | Notes                                                                            |
+| ---------------------- | ----------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| `publisher`            | string                  | `"obsidian"`                                    | URN publisher segment.                                                           |
+| `catalogDisplayName`   | string                  | `"Personal Obsidian Agentic Resource Registry"` | Catalog `host.displayName`.                                                      |
+| `catalogIdentifier`    | string?                 | —                                               | Optional `host.identifier` (DID/domain).                                         |
+| `skillFolders`         | string[]                | `[]`                                            | Absolute or vault-relative folders to scan.                                      |
+| `watchSkillFolders`    | boolean                 | `false`                                         | Opt-in fs watching of skill folders; debounced rescan on `SKILL.md` change.      |
+| `resources`            | ManualResource[]        | `[]`                                            | Manually configured non-skill entries.                                           |
+| `syncProjectMcpConfig` | boolean                 | `false`                                         | Opt-in: keep `mcpServers.<projectMcpServerName>` in `<vault>/.mcp.json` current. |
+| `projectMcpServerName` | string                  | `"ard"`                                         | Key of the entry in `.mcp.json`; blank → `ard`.                                  |
+| `server.port`          | int 1024–65535          | `27182`                                         | Listen port.                                                                     |
+| `server.bindAddress`   | `"127.0.0.1"` (literal) | `"127.0.0.1"`                                   | Not user-configurable (BR-1).                                                    |
+| `server.bearerToken`   | string                  | `""` → generated                                | 64 hex chars once generated.                                                     |
+| `server.enableCors`    | boolean                 | `true`                                          | `Access-Control-Allow-Origin: *`.                                                |
+| `searchBackend.kind`   | enum                    | `"lexical"`                                     | `lexical` \| `local-model` \| `hosted-api`.                                      |
+| `searchBackend.*`      | —                       | —                                               | Embedding server URL/model, or hosted API provider/base URL/model/key.           |
+| `lastScanStats`        | object                  | `{0,0}`                                         | Internal: last scan counts + timestamp.                                          |
 
 `ManualResource`: `{ id, enabled, type, slug, displayName, description?, url?, inlineData?, capabilities[], tags[], representativeQueries[] }` where `type` is one of the MCP/A2A/catalog/registry media types.
 
@@ -36,6 +38,12 @@ The registry runs whenever the plugin is loaded; stop it by disabling the plugin
 - **Rebuild in place** (swap catalog + reindex, server keeps serving) otherwise.
 
 All registry-mutating operations (start, rescan, reindex, reconcile) are **serialized** through one promise chain so a background scan and a concurrent settings change can't race; an `onunload` `disposed` guard prevents any in-flight op from resurrecting the server after the plugin unloads. Each reconcile also calls `reconcileWatcher()` to start/stop the opt-in `SkillWatcher` to match `watchSkillFolders` + the (resolved) folder list (and surfaces a Notice for folders that can't be watched).
+
+## Project `.mcp.json` sync
+
+`settings/project-mcp-config.ts`. Pure core `mergeProjectMcpConfig(existing | null, name, entry) → content | null` (null = entry already current, compared structurally so a differently formatted file is not rewritten); throws `ProjectMcpConfigError` when the file is not a JSON object or `mcpServers` is not an object. Entry = `buildMcpServerEntry` (`{ type: "http", url: http://127.0.0.1:<port>/mcp, headers.Authorization: "Bearer <token>" }`), shared with **Copy MCP config**. Output: 2-space indent, trailing newline, every other key preserved.
+
+`ProjectMcpConfigSync` does the I/O through `vault.adapter` (`exists`/`read`/`write` on the dotfile), skips an empty token, and notifies once per session on an unmergeable file. The plugin runs it after `coordinator.start()` in `onload` (token already ensured by `ensureBearerToken`) and inside `updateSettings` after reconcile when `projectMcpConfigAffected(previous, next)`: sync on and (just turned on, or port/token/name changed). Port = bound port, else configured port. Turning it off never touches the file (BR-6b).
 
 ## Skill folder resolution
 

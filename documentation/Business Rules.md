@@ -13,6 +13,7 @@ This document defines the core business rules. These rules MUST be respected in 
 - **BR-5 — Sandbox isolation.** The MCP `execute` tool runs in a QuickJS WASM isolate with no network, no filesystem, no host globals (`fetch`/`require`/`process`), a wall-clock timeout, and a memory cap.
 - **BR-6 — No secrets in the catalog.** The bearer token, API keys, and absolute filesystem paths never appear in `ai-catalog.json` or any response body.
 - **BR-6a — Bounded requests.** Request bodies are capped (5 MB → `413`) and bearer-token comparison is constant-time (`timingSafeEqual`).
+- **BR-6b — `.mcp.json` sync is opt-in and non-destructive.** The plugin writes `<vault>/.mcp.json` only when `syncProjectMcpConfig` is on (default off: the file holds the bearer token and the vault may be published). It changes only `mcpServers.<name>`, never overwrites a file it cannot parse, never writes an empty token, writes only on an actual change, and never deletes the entry when the setting is turned off.
 
 ## ARD conformance
 

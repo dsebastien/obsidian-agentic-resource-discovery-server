@@ -13,6 +13,11 @@ import { scanSkillFolders, type ScanResult } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
 import { generateBearerToken, isBlankToken } from './utils/token'
 import { log } from '../utils/log'
+import {
+    PROJECT_MCP_CONFIG_PATH,
+    ProjectMcpConfigSync,
+    projectMcpConfigAffected
+} from './settings/project-mcp-config'
 import { registerWhatsNewView } from './whats-new'
 
 /** Side file (next to the plugin) holding cached embedding vectors. */
@@ -74,6 +79,21 @@ export class ArdServerPlugin extends Plugin {
         }
     })
 
+    private readonly projectMcpSync = new ProjectMcpConfigSync(
+        {
+            read: async () => {
+                const adapter = this.app.vault.adapter
+                return (await adapter.exists(PROJECT_MCP_CONFIG_PATH))
+                    ? adapter.read(PROJECT_MCP_CONFIG_PATH)
+                    : null
+            },
+            write: (content) => this.app.vault.adapter.write(PROJECT_MCP_CONFIG_PATH, content)
+        },
+        (message) => {
+            new Notice(message)
+        }
+    )
+
     override async onload(): Promise<void> {
         // Must run before anything can call saveData (fresh-install detection)
         registerWhatsNewView(this)
@@ -99,6 +119,7 @@ export class ArdServerPlugin extends Plugin {
         )
 
         await this.coordinator.start()
+        await this.syncProjectMcpConfig()
         // Scan skills after the workspace settles so we don't block load or
         // drown in vault events. The scan itself yields between chunks.
         this.app.workspace.onLayoutReady(() => {
@@ -151,10 +172,35 @@ export class ArdServerPlugin extends Plugin {
             await this.saveData(next)
             this.settings = next
             await this.coordinator.applySettings(previous, this.settings)
+            if (projectMcpConfigAffected(previous, this.settings)) {
+                await this.syncProjectMcpConfig()
+            }
         }
         const p = this.settingsWriteChain.then(run, run)
         this.settingsWriteChain = p.catch(() => {})
         return p
+    }
+
+    /**
+     * Write this server's entry into the vault's `.mcp.json` when the opt-in
+     * sync is on. Never throws: a failed write must not break load or a
+     * settings change.
+     */
+    async syncProjectMcpConfig(): Promise<void> {
+        const settings = this.settings
+        if (!settings.syncProjectMcpConfig) {
+            return
+        }
+        try {
+            const outcome = await this.projectMcpSync.sync({
+                port: this.registry.port ?? settings.server.port,
+                bearerToken: settings.server.bearerToken,
+                serverName: settings.projectMcpServerName
+            })
+            log(`Project .mcp.json sync: ${outcome}`, outcome === 'invalid' ? 'warn' : 'debug')
+        } catch (error) {
+            log('Failed to update the project .mcp.json', 'error', error)
+        }
     }
 
     async saveSettings(): Promise<void> {

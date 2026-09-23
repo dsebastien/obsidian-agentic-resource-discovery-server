@@ -27,24 +27,32 @@ export function mcpEndpointUrl(port: number): string {
     return `${registryBaseUrl(port)}/mcp`
 }
 
+/** One `mcpServers` entry for the registry (Streamable HTTP). */
+export interface McpServerEntry {
+    type: 'http'
+    url: string
+    headers: { Authorization: string }
+}
+
+/**
+ * The registry's `mcpServers` entry. `type: "http"` is what Claude Code's
+ * project `.mcp.json` requires for a remote server; other clients ignore it.
+ */
+export function buildMcpServerEntry(endpoint: RegistryEndpoint): McpServerEntry {
+    return {
+        type: 'http',
+        url: mcpEndpointUrl(endpoint.port),
+        headers: { Authorization: `Bearer ${endpoint.bearerToken}` }
+    }
+}
+
 /**
  * Streamable-HTTP MCP server entry, formatted as the `mcpServers` map every
  * major client accepts.
  */
 export function buildMcpClientConfig(endpoint: RegistryEndpoint): string {
     const name = endpoint.serverName?.trim() || DEFAULT_SERVER_NAME
-    return JSON.stringify(
-        {
-            mcpServers: {
-                [name]: {
-                    url: mcpEndpointUrl(endpoint.port),
-                    headers: { Authorization: `Bearer ${endpoint.bearerToken}` }
-                }
-            }
-        },
-        null,
-        2
-    )
+    return JSON.stringify({ mcpServers: { [name]: buildMcpServerEntry(endpoint) } }, null, 2)
 }
 
 /** A copy-pasteable `curl` call against `POST /search`, for a quick sanity check. */

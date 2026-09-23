@@ -26,6 +26,16 @@ describe('parsePluginSettings', () => {
         expect(settings.skillFolders).toEqual([])
     })
 
+    it('leaves .mcp.json sync off by default, listed as "ard"', () => {
+        const settings = parsePluginSettings({})
+        expect(settings.syncProjectMcpConfig).toBe(false)
+        expect(settings.projectMcpServerName).toBe('ard')
+        expect(parsePluginSettings({ syncProjectMcpConfig: 'yes' }).syncProjectMcpConfig).toBe(
+            false
+        )
+        expect(parsePluginSettings({ syncProjectMcpConfig: true }).syncProjectMcpConfig).toBe(true)
+    })
+
     it('merges a partial object over the defaults', () => {
         const settings = parsePluginSettings({ publisher: 'dsebastien.net' })
         expect(settings.publisher).toBe('dsebastien.net')
