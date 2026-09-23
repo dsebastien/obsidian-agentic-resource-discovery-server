@@ -9,9 +9,10 @@ nav_order: 90
 
 Search quality comes straight from your skill frontmatter. To make a skill easy to find:
 
-- Write a clear **`description`** — its first sentence becomes an example query.
-- Fill in **`when_to_use`** with the situations and phrasings a user might say.
-- Set **`metadata.capability`** (e.g. `vault.note.summarize`) and **`metadata.kind`/`tier`/`effects`** — these become tags and search signals.
+- Write a clear **`description`** — its opening clause becomes an example query.
+- Fill in **`when_to_use`** with the phrasings a user might say, **in quotes**: `Use when the user says "check links", "find broken links", or "dead links".` Each quoted phrase becomes an example query verbatim, which is what the default lexical search matches best. Without quotes, a `Triggers: a, b, c` list works too.
+- Set **`metadata.capability`** (e.g. `vault.links.check`) and **`metadata.kind`/`tier`/`effects`** — these become tags and search signals. The capability also becomes a query (`check links`) when it adds words the others don't have.
+- A skill gets at most five example queries. If fewer than two can be derived, it gets none, and search relies on the name and description alone — so give every skill at least one quoted trigger phrase.
 - Use a descriptive folder name (`developassion-analytics`, not `skill1`) — it seeds the URN and a fallback display name.
 
 ## Common use cases
