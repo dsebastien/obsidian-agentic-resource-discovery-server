@@ -25,7 +25,10 @@ async function startServer(): Promise<ArdHttpServer> {
     const handler = createRouter({
         catalog,
         search,
-        skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
+        skillFiles: {
+            manifest: () => Promise.resolve(null),
+            file: () => Promise.resolve('not-found' as const)
+        },
         artifacts: new LocalArtifactStore(),
         bearerToken: TOKEN,
         baseUrl: 'http://127.0.0.1',
@@ -52,7 +55,7 @@ describe('ArdHttpServer', () => {
 
     it('rejects an oversized request body with 413', async () => {
         server = await startServer()
-        const res = await fetch(`http://127.0.0.1:${server.port}/search`, {
+        const res = await Bun.fetch(`http://127.0.0.1:${server.port}/search`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'authorization': `Bearer ${TOKEN}` },
             body: 'x'.repeat(6 * 1024 * 1024) // > 5 MB cap
@@ -62,7 +65,7 @@ describe('ArdHttpServer', () => {
 
     it('serves the public catalog over HTTP', async () => {
         server = await startServer()
-        const res = await fetch(`http://127.0.0.1:${server.port}/.well-known/ai-catalog.json`)
+        const res = await Bun.fetch(`http://127.0.0.1:${server.port}/.well-known/ai-catalog.json`)
         expect(res.status).toBe(200)
         const body = (await res.json()) as { specVersion: string; entries: unknown[] }
         expect(body.specVersion).toBe('1.0')
@@ -71,7 +74,7 @@ describe('ArdHttpServer', () => {
 
     it('runs an authenticated search over HTTP', async () => {
         server = await startServer()
-        const res = await fetch(`http://127.0.0.1:${server.port}/search`, {
+        const res = await Bun.fetch(`http://127.0.0.1:${server.port}/search`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'authorization': `Bearer ${TOKEN}` },
             body: JSON.stringify({ query: { text: 'commit changes' } })
@@ -83,7 +86,7 @@ describe('ArdHttpServer', () => {
 
     it('rejects an unauthenticated protected request over HTTP', async () => {
         server = await startServer()
-        const res = await fetch(`http://127.0.0.1:${server.port}/search`, {
+        const res = await Bun.fetch(`http://127.0.0.1:${server.port}/search`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ query: { text: 'x' } })
@@ -100,7 +103,10 @@ describe('ArdHttpServer', () => {
         const handler = createRouter({
             catalog: new CatalogService({ displayName: 'T' }),
             search: new LexicalSearchBackend(),
-            skillFiles: { manifest: async () => null, file: async () => 'not-found' as const },
+            skillFiles: {
+                manifest: () => Promise.resolve(null),
+                file: () => Promise.resolve('not-found' as const)
+            },
             artifacts: new LocalArtifactStore(),
             bearerToken: TOKEN,
             baseUrl: 'http://127.0.0.1',

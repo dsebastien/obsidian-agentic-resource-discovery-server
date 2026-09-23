@@ -1,12 +1,20 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { createRouter, type RegistryRequest } from './router'
+import { createRouter, type RegistryRequest, type RegistryResponse } from './router'
 import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LocalArtifactStore } from '../artifacts/local-artifact-store'
 import { CatalogService } from '../catalog/catalog-service'
 import { LexicalSearchBackend } from '../search/lexical-search-backend'
-import { ArdMediaType, type CatalogEntry } from '../types/ard.types'
+import type { SkillFileService, SkillManifest } from '../skills/skill-file-server'
+import {
+    ArdMediaType,
+    type AiCatalog,
+    type ArdErrorResponse,
+    type ArdListResponse,
+    type ArdSearchResponse,
+    type CatalogEntry
+} from '../types/ard.types'
 
 const TOKEN = 'test-token'
 const BASE_URL = 'http://127.0.0.1:27182'
@@ -40,31 +48,65 @@ const ENTRIES: CatalogEntry[] = [
     }
 ]
 
-const fakeSkillFiles = {
-    manifest: async (name: string) =>
-        name === 'git-commit-helper'
-            ? {
-                  name,
-                  files: [
-                      {
-                          path: 'SKILL.md',
-                          url: `${BASE_URL}/skills/git-commit-helper/SKILL.md`,
-                          type: 'text/markdown',
-                          size: 7
-                      }
-                  ]
-              }
-            : null,
-    file: async (name: string, relPath: string) => {
-        if (name !== 'git-commit-helper') return 'not-found' as const
-        if (relPath.includes('..')) return 'forbidden' as const
+/** GET /status body; the router builds it inline, so the spec names the slice it reads. */
+interface StatusBody {
+    status: string
+    catalog: { entries: number; skills: number; subagents: number; manual: number }
+    search: {
+        backend: string
+        ready: boolean
+        embeddings: { state: string; ready: boolean } | null
+    }
+}
+
+interface FacetCount {
+    value: string
+    count: number
+}
+
+/** POST /explore body. */
+interface ExploreBody {
+    total: number
+    facets: { type: FacetCount[]; tags: FacetCount[]; capabilities: FacetCount[] }
+}
+
+/** The slice of a POST /mcp tools/call response these tests read. */
+interface McpBody {
+    result: { structuredContent: { results: Array<{ identifier: string }> } }
+}
+
+/** Parse a JSON router response body as the given shape. */
+function parseBody<T>(res: RegistryResponse): T {
+    return JSON.parse(res.body as string) as T
+}
+
+const fakeSkillFiles: SkillFileService = {
+    manifest: (name: string) =>
+        Promise.resolve(
+            name === 'git-commit-helper'
+                ? {
+                      name,
+                      files: [
+                          {
+                              path: 'SKILL.md',
+                              url: `${BASE_URL}/skills/git-commit-helper/SKILL.md`,
+                              type: 'text/markdown',
+                              size: 7
+                          }
+                      ]
+                  }
+                : null
+        ),
+    file: (name: string, relPath: string) => {
+        if (name !== 'git-commit-helper') return Promise.resolve('not-found' as const)
+        if (relPath.includes('..')) return Promise.resolve('forbidden' as const)
         if (relPath === 'SKILL.md') {
-            return {
+            return Promise.resolve({
                 contentType: 'text/markdown; charset=utf-8',
                 body: new TextEncoder().encode('# Skill')
-            }
+            })
         }
-        return 'not-found' as const
+        return Promise.resolve('not-found' as const)
     }
 }
 
@@ -146,7 +188,7 @@ describe('registry router', () => {
         expect(res.status).toBe(200)
         expect(res.headers['content-type']).toContain('application/json')
         expect(res.headers['access-control-allow-origin']).toBe('*')
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<AiCatalog>(res)
         expect(body.specVersion).toBe('1.0')
         expect(body.entries).toHaveLength(3)
     })
@@ -154,7 +196,7 @@ describe('registry router', () => {
     it('serves a public health check', async () => {
         const res = await handle(req({ method: 'GET', path: '/health' }))
         expect(res.status).toBe(200)
-        expect(JSON.parse(res.body as string).status).toBe('ok')
+        expect(parseBody<{ status: string }>(res).status).toBe('ok')
     })
 
     it('requires auth for GET /status', async () => {
@@ -165,7 +207,7 @@ describe('registry router', () => {
     it('reports catalog size and search backend on GET /status', async () => {
         const res = await handle(authed({ method: 'GET', path: '/status' }))
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<StatusBody>(res)
         expect(body.status).toBe('ok')
         expect(body.catalog.entries).toBe(3)
         expect(body.search.backend).toBe('lexical')
@@ -187,21 +229,21 @@ describe('registry router', () => {
         await search.index(ENTRIES)
         const handleSemantic = createRouter({ ...routerDeps(search) })
 
-        let body = JSON.parse(
-            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        let body = parseBody<StatusBody>(
+            await handleSemantic(authed({ method: 'GET', path: '/status' }))
         )
         expect(body.status).toBe('ok') // still searchable, just lexical-only
         expect(body.search.embeddings).toEqual({ state: 'building', ready: false })
 
         search.state = 'ready'
-        body = JSON.parse(
-            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        body = parseBody<StatusBody>(
+            await handleSemantic(authed({ method: 'GET', path: '/status' }))
         )
         expect(body.search.embeddings).toEqual({ state: 'ready', ready: true })
 
         search.state = 'failed'
-        body = JSON.parse(
-            (await handleSemantic(authed({ method: 'GET', path: '/status' }))).body as string
+        body = parseBody<StatusBody>(
+            await handleSemantic(authed({ method: 'GET', path: '/status' }))
         )
         expect(body.status).toBe('degraded')
         expect(body.search.embeddings).toEqual({ state: 'failed', ready: false })
@@ -210,8 +252,8 @@ describe('registry router', () => {
     it('reports degraded on GET /status when the backend has no index yet', async () => {
         const search = new LexicalSearchBackend() // never indexed
         const handleCold = createRouter({ ...routerDeps(search) })
-        const body = JSON.parse(
-            (await handleCold(authed({ method: 'GET', path: '/status' }))).body as string
+        const body = parseBody<StatusBody>(
+            await handleCold(authed({ method: 'GET', path: '/status' }))
         )
         expect(body.status).toBe('degraded')
         expect(body.search.ready).toBe(false)
@@ -262,8 +304,8 @@ describe('registry router', () => {
         const search = new LexicalSearchBackend()
         await search.index(catalog.listAll())
         const handleMixed = createRouter({ ...routerDeps(search), catalog })
-        const body = JSON.parse(
-            (await handleMixed(authed({ method: 'GET', path: '/status' }))).body as string
+        const body = parseBody<StatusBody>(
+            await handleMixed(authed({ method: 'GET', path: '/status' }))
         )
         expect(body.catalog).toEqual({ entries: 4, skills: 2, subagents: 1, manual: 1 })
     })
@@ -296,10 +338,10 @@ describe('registry router', () => {
             })
         )
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
-        expect(body.results[0].identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
-        expect(typeof body.results[0].score).toBe('number')
-        expect(body.results[0].source).toBe(BASE_URL)
+        const body = parseBody<ArdSearchResponse>(res)
+        expect(body.results[0]!.identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
+        expect(typeof body.results[0]!.score).toBe('number')
+        expect(body.results[0]!.source).toBe(BASE_URL)
     })
 
     it('applies search filters from the request body', async () => {
@@ -312,7 +354,7 @@ describe('registry router', () => {
                 })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdSearchResponse>(res)
         expect(body.results.every((r: { type: string }) => r.type === 'application/ai-skill')).toBe(
             true
         )
@@ -384,7 +426,7 @@ describe('registry router', () => {
             })
         )
         expect(res.status).toBe(400)
-        expect(JSON.parse(res.body as string).message).toContain('limit')
+        expect(parseBody<ArdErrorResponse>(res).message).toContain('limit')
     })
 
     describe('POST /search paging and federation', () => {
@@ -534,13 +576,13 @@ describe('registry router', () => {
     it('rejects a malformed search body with 400 and an error code', async () => {
         const res = await handle(authed({ method: 'POST', path: '/search', body: '{"nope":1}' }))
         expect(res.status).toBe(400)
-        expect(JSON.parse(res.body as string).errorCode).toBeDefined()
+        expect(parseBody<ArdErrorResponse>(res).errorCode).toBeDefined()
     })
 
     it('facets the whole catalog on POST /explore', async () => {
         const res = await handle(authed({ method: 'POST', path: '/explore', body: '{}' }))
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ExploreBody>(res)
         expect(body.total).toBe(3)
         expect(body.facets.type).toEqual([
             { value: 'application/ai-skill', count: 2 },
@@ -565,7 +607,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { filter: { type: 'application/ai-skill' } } })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ExploreBody>(res)
         expect(body.total).toBe(2)
         expect(body.facets.type).toEqual([{ value: 'application/ai-skill', count: 2 }])
         expect(body.facets.tags.map((f: { value: string }) => f.value)).not.toContain('weather')
@@ -579,7 +621,7 @@ describe('registry router', () => {
                 body: JSON.stringify({ query: { text: 'commit staged changes' } })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ExploreBody>(res)
         expect(body.total).toBeGreaterThan(0)
         expect(body.facets.capabilities).toEqual([{ value: 'git.commit.write', count: 1 }])
     })
@@ -597,7 +639,7 @@ describe('registry router', () => {
             authed({ method: 'POST', path: '/explore', body: '{"facets":[123]}' })
         )
         expect(res.status).toBe(400)
-        expect(JSON.parse(res.body as string).errorCode).toBeDefined()
+        expect(parseBody<ArdErrorResponse>(res).errorCode).toBeDefined()
     })
 
     it('requires auth for POST /explore', async () => {
@@ -621,7 +663,7 @@ describe('registry router', () => {
         })
         const res = await empty(authed({ method: 'POST', path: '/explore', body: '{}' }))
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ExploreBody>(res)
         expect(body.total).toBe(0)
         expect(body.facets).toEqual({ type: [], tags: [], capabilities: [] })
     })
@@ -629,7 +671,7 @@ describe('registry router', () => {
     it('lists entries deterministically via GET /agents', async () => {
         const res = await handle(authed({ method: 'GET', path: '/agents' }))
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdListResponse>(res)
         expect(body.total).toBe(3)
         expect(body.items).toHaveLength(3)
     })
@@ -642,18 +684,18 @@ describe('registry router', () => {
                 query: new URLSearchParams({ type: 'application/mcp-server-card+json' })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdListResponse>(res)
         expect(body.total).toBe(1)
-        expect(body.items[0].identifier).toBe('urn:air:obsidian:mcp:weather')
+        expect(body.items[0]!.identifier).toBe('urn:air:obsidian:mcp:weather')
     })
 
     it('filters GET /agents by tags (any-match)', async () => {
         const res = await handle(
             authed({ method: 'GET', path: '/agents', query: new URLSearchParams({ tags: 'git' }) })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdListResponse>(res)
         expect(body.total).toBe(1)
-        expect(body.items[0].identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
+        expect(body.items[0]!.identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
     })
 
     it('filters GET /agents by capabilities', async () => {
@@ -664,9 +706,9 @@ describe('registry router', () => {
                 query: new URLSearchParams({ capabilities: 'git.commit.write' })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdListResponse>(res)
         expect(body.total).toBe(1)
-        expect(body.items[0].identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
+        expect(body.items[0]!.identifier).toBe('urn:air:obsidian:skills:git-commit-helper')
     })
 
     it('accepts comma-separated and repeated filter values on GET /agents', async () => {
@@ -677,13 +719,13 @@ describe('registry router', () => {
                 query: new URLSearchParams({ tags: 'git,notes' })
             })
         )
-        expect(JSON.parse(comma.body as string).total).toBe(2)
+        expect(parseBody<ArdListResponse>(comma).total).toBe(2)
 
         const repeated = new URLSearchParams()
         repeated.append('tags', 'git')
         repeated.append('tags', 'notes')
         const res = await handle(authed({ method: 'GET', path: '/agents', query: repeated }))
-        expect(JSON.parse(res.body as string).total).toBe(2)
+        expect(parseBody<ArdListResponse>(res).total).toBe(2)
     })
 
     it('combines GET /agents filters with pagination', async () => {
@@ -693,16 +735,16 @@ describe('registry router', () => {
             pageSize: '1'
         })
         const first = await handle(authed({ method: 'GET', path: '/agents', query }))
-        const firstBody = JSON.parse(first.body as string)
+        const firstBody = parseBody<ArdListResponse>(first)
         expect(firstBody.total).toBe(2)
         expect(firstBody.items).toHaveLength(1)
         expect(firstBody.pageToken).toBeDefined()
 
         query.set('pageToken', String(firstBody.pageToken))
         const second = await handle(authed({ method: 'GET', path: '/agents', query }))
-        const secondBody = JSON.parse(second.body as string)
+        const secondBody = parseBody<ArdListResponse>(second)
         expect(secondBody.total).toBe(2)
-        expect(secondBody.items[0].identifier).not.toBe(firstBody.items[0].identifier)
+        expect(secondBody.items[0]!.identifier).not.toBe(firstBody.items[0]!.identifier)
         expect(secondBody.pageToken).toBeUndefined()
     })
 
@@ -714,7 +756,7 @@ describe('registry router', () => {
                 query: new URLSearchParams({ tags: 'nothing-matches' })
             })
         )
-        const body = JSON.parse(res.body as string)
+        const body = parseBody<ArdListResponse>(res)
         expect(body.total).toBe(0)
         expect(body.items).toEqual([])
     })
@@ -727,7 +769,7 @@ describe('registry router', () => {
                 query: new URLSearchParams({ pageSize: '1' })
             })
         )
-        const firstBody = JSON.parse(first.body as string)
+        const firstBody = parseBody<ArdListResponse>(first)
         expect(firstBody.items).toHaveLength(1)
         expect(firstBody.pageToken).toBeDefined()
 
@@ -735,11 +777,11 @@ describe('registry router', () => {
             authed({
                 method: 'GET',
                 path: '/agents',
-                query: new URLSearchParams({ pageSize: '1', pageToken: firstBody.pageToken })
+                query: new URLSearchParams({ pageSize: '1', pageToken: firstBody.pageToken! })
             })
         )
-        const secondBody = JSON.parse(second.body as string)
-        expect(secondBody.items[0].identifier).not.toBe(firstBody.items[0].identifier)
+        const secondBody = parseBody<ArdListResponse>(second)
+        expect(secondBody.items[0]!.identifier).not.toBe(firstBody.items[0]!.identifier)
     })
 
     it('rejects a garbled GET /agents page token with 400 instead of restarting at page one', async () => {
@@ -751,7 +793,7 @@ describe('registry router', () => {
             })
         )
         expect(res.status).toBe(400)
-        expect(JSON.parse(res.body as string).errorCode).toBe('INVALID_ARGUMENT')
+        expect(parseBody<ArdErrorResponse>(res).errorCode).toBe('INVALID_ARGUMENT')
     })
 
     it('404s an unknown route', async () => {
@@ -762,7 +804,7 @@ describe('registry router', () => {
     it('serves a skill bundle manifest', async () => {
         const res = await handle(authed({ method: 'GET', path: '/skills/git-commit-helper' }))
         expect(res.status).toBe(200)
-        expect(JSON.parse(res.body as string).files[0].path).toBe('SKILL.md')
+        expect(parseBody<SkillManifest>(res).files[0]!.path).toBe('SKILL.md')
     })
 
     it('serves a skill file with its content type', async () => {
@@ -805,8 +847,8 @@ describe('registry router', () => {
             })
         )
         expect(res.status).toBe(200)
-        const body = JSON.parse(res.body as string)
-        expect(body.result.structuredContent.results[0].identifier).toBe(
+        const body = parseBody<McpBody>(res)
+        expect(body.result.structuredContent.results[0]!.identifier).toBe(
             'urn:air:obsidian:skills:git-commit-helper'
         )
     })

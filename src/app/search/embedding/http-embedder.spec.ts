@@ -6,15 +6,15 @@ function fakeClient(
     vectorFor: (text: string) => number[],
     onRequest?: (req: { url: string; headers: Record<string, string>; body: string }) => void
 ): EmbeddingHttpClient {
-    return async (req) => {
+    return (req) => {
         onRequest?.(req)
         const parsed = JSON.parse(req.body) as { input: string[] }
-        return {
+        return Promise.resolve({
             status: 200,
             json: {
                 data: parsed.input.map((text, index) => ({ index, embedding: vectorFor(text) }))
             }
-        }
+        })
     }
 }
 
@@ -54,11 +54,11 @@ describe('HttpEmbedder', () => {
     })
 
     it('preserves order via the response index field', async () => {
-        const client: EmbeddingHttpClient = async (req) => {
+        const client: EmbeddingHttpClient = (req) => {
             const parsed = JSON.parse(req.body) as { input: string[] }
             // Return rows out of order; index must drive reassembly.
             const rows = parsed.input.map((_t, i) => ({ index: i, embedding: [i + 1, 0] }))
-            return { status: 200, json: { data: [...rows].reverse() } }
+            return Promise.resolve({ status: 200, json: { data: [...rows].reverse() } })
         }
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         await embedder.load()
@@ -69,17 +69,17 @@ describe('HttpEmbedder', () => {
 
     it('preserves response order when the server omits index (no collapse to 0)', async () => {
         // Ollama-style: no `index` field. Distinct vectors must stay in order.
-        const client: EmbeddingHttpClient = async (req) => {
+        const client: EmbeddingHttpClient = (req) => {
             const parsed = JSON.parse(req.body) as { input: string[] }
             const vecs = [
                 [1, 0],
                 [0, 1],
                 [1, 1]
             ]
-            return {
+            return Promise.resolve({
                 status: 200,
                 json: { data: parsed.input.map((_t, i) => ({ embedding: vecs[i] })) }
-            }
+            })
         }
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         await embedder.load()
@@ -110,7 +110,8 @@ describe('HttpEmbedder', () => {
     })
 
     it('rejects load() when the server returns a non-2xx status', async () => {
-        const client: EmbeddingHttpClient = async () => ({ status: 500, json: { error: 'boom' } })
+        const client: EmbeddingHttpClient = () =>
+            Promise.resolve({ status: 500, json: { error: 'boom' } })
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         const error = await embedder.load().then(
             () => undefined,
@@ -121,9 +122,7 @@ describe('HttpEmbedder', () => {
     })
 
     it('rejects load() when the client throws (server unreachable)', async () => {
-        const client: EmbeddingHttpClient = async () => {
-            throw new Error('ECONNREFUSED')
-        }
+        const client: EmbeddingHttpClient = () => Promise.reject(new Error('ECONNREFUSED'))
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         const error = await embedder.load().then(
             () => undefined,
@@ -134,7 +133,8 @@ describe('HttpEmbedder', () => {
     })
 
     it('rejects on a malformed response shape', async () => {
-        const client: EmbeddingHttpClient = async () => ({ status: 200, json: { nope: true } })
+        const client: EmbeddingHttpClient = () =>
+            Promise.resolve({ status: 200, json: { nope: true } })
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         const error = await embedder.load().then(
             () => undefined,
@@ -145,13 +145,13 @@ describe('HttpEmbedder', () => {
 
     it('returns [] for an empty input without calling the server', async () => {
         let calls = 0
-        const client: EmbeddingHttpClient = async (req) => {
+        const client: EmbeddingHttpClient = (req) => {
             calls++
             const parsed = JSON.parse(req.body) as { input: string[] }
-            return {
+            return Promise.resolve({
                 status: 200,
                 json: { data: parsed.input.map((_t, index) => ({ index, embedding: [1] })) }
-            }
+            })
         }
         const embedder = new HttpEmbedder({ url: 'http://x/v1', model: 'm' }, client)
         await embedder.load() // one probe call

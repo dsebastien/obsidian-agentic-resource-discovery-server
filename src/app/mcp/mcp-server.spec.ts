@@ -51,6 +51,28 @@ const call = (id: number, name: string, args: object) =>
         deps
     )
 
+/** The slice of a JSON-RPC response these tests read (the production type keeps `result` opaque). */
+interface RpcResponse {
+    result: {
+        serverInfo: { name: string }
+        capabilities: { tools?: unknown }
+        tools: Array<{ name: string }>
+        structuredContent: {
+            results: Array<{ identifier: string }>
+            entry: { displayName: string }
+            body: string
+            result: unknown
+        }
+        isError?: boolean
+    }
+    error?: { code: number }
+}
+
+/** Await a handler call and view its response through {@link RpcResponse}. */
+async function rpc(pending: Promise<unknown>): Promise<RpcResponse> {
+    return (await pending) as RpcResponse
+}
+
 let deps: McpDeps
 
 describe('handleMcpMessage', () => {
@@ -59,49 +81,51 @@ describe('handleMcpMessage', () => {
     })
 
     it('responds to initialize with server info and tool capability', async () => {
-        const res: any = await handleMcpMessage(
-            { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
-            deps
+        const res = await rpc(
+            handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }, deps)
         )
         expect(res.result.serverInfo.name).toBeDefined()
         expect(res.result.capabilities.tools).toBeDefined()
     })
 
     it('lists the search, get_skill, and execute tools', async () => {
-        const res: any = await handleMcpMessage(
-            { jsonrpc: '2.0', id: 2, method: 'tools/list' },
-            deps
+        const res = await rpc(
+            handleMcpMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, deps)
         )
-        const names = res.result.tools.map((t: { name: string }) => t.name)
-        expect(names).toEqual(expect.arrayContaining(['search', 'get_skill', 'execute']))
+        const names = res.result.tools.map((t) => t.name)
+        expect(names).toEqual(
+            expect.arrayContaining(['search', 'get_skill', 'execute']) as string[]
+        )
         // The settings status panel advertises this list — keep them in sync.
         expect(names).toEqual([...MCP_TOOL_NAMES])
     })
 
     it('runs the search tool', async () => {
-        const res: any = await call(3, 'search', { query: 'commit' })
-        expect(res.result.structuredContent.results[0].identifier).toBe(
+        const res = await rpc(call(3, 'search', { query: 'commit' }))
+        expect(res.result.structuredContent.results[0]!.identifier).toBe(
             'urn:air:obsidian:skills:git-commit'
         )
     })
 
     it('runs the get_skill tool with body', async () => {
-        const res: any = await call(4, 'get_skill', {
-            identifier: 'urn:air:obsidian:skills:git-commit',
-            include_body: true
-        })
+        const res = await rpc(
+            call(4, 'get_skill', {
+                identifier: 'urn:air:obsidian:skills:git-commit',
+                include_body: true
+            })
+        )
         expect(res.result.structuredContent.entry.displayName).toBe('Git Commit Helper')
         expect(res.result.structuredContent.body).toContain('# Git Commit')
     })
 
     it('runs the execute tool (Code Mode) against the catalog', async () => {
-        const res: any = await call(5, 'execute', { code: 'return registry.listAll().length' })
+        const res = await rpc(call(5, 'execute', { code: 'return registry.listAll().length' }))
         expect(res.result.structuredContent.result).toBe(1)
         expect(res.result.isError).toBeFalsy()
     })
 
     it('reports execute errors as tool errors, not RPC errors', async () => {
-        const res: any = await call(6, 'execute', { code: 'throw new Error("boom")' })
+        const res = await rpc(call(6, 'execute', { code: 'throw new Error("boom")' }))
         expect(res.result.isError).toBe(true)
         expect(res.error).toBeUndefined()
     })
@@ -115,11 +139,10 @@ describe('handleMcpMessage', () => {
     })
 
     it('errors on an unknown method', async () => {
-        const res: any = await handleMcpMessage(
-            { jsonrpc: '2.0', id: 7, method: 'bogus/method' },
-            deps
+        const res = await rpc(
+            handleMcpMessage({ jsonrpc: '2.0', id: 7, method: 'bogus/method' }, deps)
         )
-        expect(res.error.code).toBe(-32601)
+        expect(res.error!.code).toBe(-32601)
     })
 })
 
@@ -225,7 +248,7 @@ describe('get_resource', () => {
         const res = asJson(
             await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, deps)
         )
-        const names = res.result.tools.map((t: { name: string }) => t.name)
+        const names = res.result.tools.map((t) => t.name)
         expect(names).toEqual(['search', 'get_resource', 'get_skill', 'execute'])
     })
 })

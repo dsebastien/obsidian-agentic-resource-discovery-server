@@ -82,7 +82,7 @@ describe('LexicalSearchBackend', () => {
             query: 'weather forecast',
             filter: { type: [ArdMediaType.AiSkill] }
         })
-        expect(results.every((r) => r.entry.type === ArdMediaType.AiSkill)).toBe(true)
+        expect(results.every((r) => r.entry.type === (ArdMediaType.AiSkill as string))).toBe(true)
         expect(results.map((r) => r.entry.identifier)).not.toContain('urn:air:obsidian:mcp:weather')
     })
 

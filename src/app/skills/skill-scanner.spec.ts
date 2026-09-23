@@ -156,8 +156,9 @@ describe('scanSkillFolders', () => {
         let yields = 0
         await scanSkillFolders([root], CTX, {
             chunkSize: 1,
-            scheduler: async () => {
+            scheduler: () => {
                 yields++
+                return Promise.resolve()
             }
         })
         expect(yields).toBeGreaterThanOrEqual(2)

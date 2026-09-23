@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test'
+import { clearTimeout, setTimeout } from 'node:timers'
 import { SkillWatcher, affectsCatalog, type WatchFn } from './skill-watcher'
 
 const timers = {

@@ -94,10 +94,11 @@ describe('ProjectMcpConfigSync', () => {
         const state = { content: initial, writes: 0, notices: [] as string[] }
         const sync = new ProjectMcpConfigSync(
             {
-                read: async () => state.content,
-                write: async (content) => {
+                read: () => Promise.resolve(state.content),
+                write: (content) => {
                     state.content = content
                     state.writes++
+                    return Promise.resolve()
                 }
             },
             (message) => state.notices.push(message)

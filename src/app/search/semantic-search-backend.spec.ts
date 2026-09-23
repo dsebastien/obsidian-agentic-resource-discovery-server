@@ -25,10 +25,11 @@ function fakeEmbedder(vec: (text: string) => number[], dims = 3): Embedder {
         id: 'fake',
         dimensions: dims,
         isReady: () => ready,
-        load: async () => {
+        load: () => {
             ready = true
+            return Promise.resolve()
         },
-        embed: async (texts) => texts.map((t) => unit(vec(t)))
+        embed: (texts) => Promise.resolve(texts.map((t) => unit(vec(t))))
     }
 }
 
@@ -38,12 +39,8 @@ function failingEmbedder(): Embedder {
         id: 'broken',
         dimensions: 3,
         isReady: () => false,
-        load: async () => {
-            throw new Error('model download failed')
-        },
-        embed: async () => {
-            throw new Error('not loaded')
-        }
+        load: () => Promise.reject(new Error('model download failed')),
+        embed: () => Promise.reject(new Error('not loaded'))
     }
 }
 
@@ -78,12 +75,13 @@ function countingCache(): EmbeddingCache & { vectors: Map<string, Float32Array>;
         set(key: string, vector: Float32Array) {
             this.vectors.set(key, vector)
         },
-        async save(keysInUse: string[]) {
+        save(keysInUse: string[]) {
             this.saves++
             const keep = new Set(keysInUse)
             for (const key of [...this.vectors.keys()]) {
                 if (!keep.has(key)) this.vectors.delete(key)
             }
+            return Promise.resolve()
         }
     }
 }
@@ -158,13 +156,13 @@ describe('SemanticSearchBackend', () => {
             id: 'flaky-query',
             dimensions: 3,
             isReady: () => true,
-            load: async () => {},
+            load: () => Promise.resolve(),
             // Build embeds the whole entry set (length > 1); a query embeds 1 text.
-            embed: async (texts) => {
+            embed: (texts) => {
                 if (failQueries && texts.length === 1) {
-                    throw new Error('server died after build')
+                    return Promise.reject(new Error('server died after build'))
                 }
-                return texts.map(() => unit([1, 0, 0]))
+                return Promise.resolve(texts.map(() => unit([1, 0, 0])))
             }
         }
         const backend = new SemanticSearchBackend(embedder)
@@ -204,13 +202,14 @@ describe('SemanticSearchBackend', () => {
             id: 'flaky',
             dimensions: 3,
             isReady: () => !failNext,
-            load: async () => {
+            load: () => {
                 if (failNext) {
                     failNext = false
-                    throw new Error('server not up yet')
+                    return Promise.reject(new Error('server not up yet'))
                 }
+                return Promise.resolve()
             },
-            embed: async (texts) => texts.map(() => unit([1, 0, 0]))
+            embed: (texts) => Promise.resolve(texts.map(() => unit([1, 0, 0])))
         }
         const backend = new SemanticSearchBackend(embedder)
         await backend.index(ENTRIES)

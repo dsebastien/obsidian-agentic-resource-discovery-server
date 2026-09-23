@@ -15,12 +15,13 @@ function fakeStorage(initial: string | null = null): EmbeddingCacheStorage & {
     return {
         data: initial,
         writes: 0,
-        async read() {
-            return this.data
+        read() {
+            return Promise.resolve(this.data)
         },
-        async write(data: string) {
+        write(data: string) {
             this.data = data
             this.writes++
+            return Promise.resolve()
         }
     }
 }
@@ -112,10 +113,8 @@ describe('PersistentEmbeddingCache', () => {
         expect(wrongVersion.size).toBe(0)
 
         const unreadable = new PersistentEmbeddingCache({
-            read: async () => {
-                throw new Error('EACCES')
-            },
-            write: async () => undefined
+            read: () => Promise.reject(new Error('EACCES')),
+            write: () => Promise.resolve()
         })
         await unreadable.load()
         expect(unreadable.size).toBe(0)
@@ -123,10 +122,8 @@ describe('PersistentEmbeddingCache', () => {
 
     it('swallows a failed write (a cache is never load-bearing)', async () => {
         const cache = new PersistentEmbeddingCache({
-            read: async () => null,
-            write: async () => {
-                throw new Error('disk full')
-            }
+            read: () => Promise.resolve(null),
+            write: () => Promise.reject(new Error('disk full'))
         })
         await cache.load()
         cache.set('a', vec(1, 0, 0))

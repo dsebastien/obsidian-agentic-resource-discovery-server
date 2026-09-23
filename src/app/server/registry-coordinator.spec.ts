@@ -57,20 +57,25 @@ function harness(
     const state = { settings: DEFAULT_SETTINGS }
 
     const registry: RegistryPort = {
-        start: async () => {
+        start: () => {
             calls.push('start')
+            return Promise.resolve()
         },
-        stop: async () => {
+        stop: () => {
             calls.push('stop')
+            return Promise.resolve()
         },
-        rebuild: async () => {
+        rebuild: () => {
             calls.push('rebuild')
+            return Promise.resolve()
         },
-        setScannedEntries: async () => {
+        setScannedEntries: () => {
             calls.push('setScannedEntries')
+            return Promise.resolve()
         },
-        reindex: async () => {
+        reindex: () => {
             calls.push('reindex')
+            return Promise.resolve()
         },
         isRunning: true,
         port: 27182,
@@ -94,13 +99,14 @@ function harness(
         watcher,
         settings: () => state.settings,
         skillFolders: () => ['/skills'],
-        scan: async (_folders, _ctx, cache) => {
+        scan: (_folders, _ctx, cache) => {
             calls.push('scan')
             scans.push(cache)
-            return scanResult()
+            return Promise.resolve(scanResult())
         },
-        onScanned: async () => {
+        onScanned: () => {
             calls.push('onScanned')
+            return Promise.resolve()
         },
         notify: (message) => notices.push(message),
         ...over
@@ -137,8 +143,9 @@ describe('RegistryCoordinator serialization', () => {
                     await started
                     order.push('start:end')
                 },
-                reindex: async () => {
+                reindex: () => {
                     order.push('reindex')
+                    return Promise.resolve()
                 }
             }
         )
@@ -157,9 +164,7 @@ describe('RegistryCoordinator serialization', () => {
         const h = harness(
             {},
             {
-                start: async () => {
-                    throw new Error('port in use')
-                }
+                start: () => Promise.reject(new Error('port in use'))
             }
         )
         await h.coordinator.start()
@@ -186,14 +191,13 @@ describe('RegistryCoordinator dispose', () => {
     })
 
     it('does not resurrect the registry when unloaded mid-scan', async () => {
-        let disposeNow: (() => void) | undefined
         const h = harness({
-            scan: async () => {
-                disposeNow?.()
-                return scanResult()
+            scan: () => {
+                disposeNow()
+                return Promise.resolve(scanResult())
             }
         })
-        disposeNow = () => h.coordinator.dispose()
+        const disposeNow = (): void => h.coordinator.dispose()
         await h.coordinator.rescanSkills()
         expect(h.calls).not.toContain('setScannedEntries')
         expect(h.calls).not.toContain('onScanned')
@@ -353,9 +357,7 @@ describe('RegistryCoordinator scanning', () => {
 
     it('survives a failing scan', async () => {
         const h = harness({
-            scan: async () => {
-                throw new Error('unreadable folder')
-            }
+            scan: () => Promise.reject(new Error('unreadable folder'))
         })
         await h.coordinator.rescanSkills() // must not reject
         expect(h.calls).not.toContain('setScannedEntries')
@@ -383,30 +385,32 @@ describe('subagent scanning', () => {
         const h = harness(
             {
                 agentFolders: () => ['/agents'],
-                scanAgents: async () => ({
-                    entries: [
-                        {
-                            identifier: 'urn:air:obsidian:subagents:editor',
-                            displayName: 'Editor',
-                            type: ArdMediaType.AiAgent,
-                            url: 'http://127.0.0.1:27182/subagents/editor.md'
+                scanAgents: () =>
+                    Promise.resolve({
+                        entries: [
+                            {
+                                identifier: 'urn:air:obsidian:subagents:editor',
+                                displayName: 'Editor',
+                                type: ArdMediaType.AiAgent,
+                                url: 'http://127.0.0.1:27182/subagents/editor.md'
+                            }
+                        ],
+                        artifacts: [],
+                        agentCount: 1,
+                        errorCount: 0,
+                        duplicateCount: 0,
+                        skippedCount: 0,
+                        cache: {
+                            publisher: 'obsidian',
+                            baseUrl: 'http://127.0.0.1:27182',
+                            files: new Map()
                         }
-                    ],
-                    artifacts: [],
-                    agentCount: 1,
-                    errorCount: 0,
-                    duplicateCount: 0,
-                    skippedCount: 0,
-                    cache: {
-                        publisher: 'obsidian',
-                        baseUrl: 'http://127.0.0.1:27182',
-                        files: new Map()
-                    }
-                })
+                    })
             },
             {
-                setScannedEntries: async (_settings, snapshot) => {
+                setScannedEntries: (_settings, snapshot) => {
                     snapshots.push(snapshot)
+                    return Promise.resolve()
                 }
             }
         )
@@ -424,19 +428,20 @@ describe('subagent scanning', () => {
         const h = harness({
             skillFolders: () => [],
             agentFolders: () => ['/agents'],
-            scanAgents: async () => ({
-                entries: [],
-                artifacts: [],
-                agentCount: 0,
-                errorCount: 0,
-                duplicateCount: 0,
-                skippedCount: 0,
-                cache: {
-                    publisher: 'obsidian',
-                    baseUrl: 'http://127.0.0.1:27182',
-                    files: new Map()
-                }
-            })
+            scanAgents: () =>
+                Promise.resolve({
+                    entries: [],
+                    artifacts: [],
+                    agentCount: 0,
+                    errorCount: 0,
+                    duplicateCount: 0,
+                    skippedCount: 0,
+                    cache: {
+                        publisher: 'obsidian',
+                        baseUrl: 'http://127.0.0.1:27182',
+                        files: new Map()
+                    }
+                })
         })
         await h.coordinator.rescanSkills()
         expect(h.calls).toContain('setScannedEntries')
@@ -445,9 +450,7 @@ describe('subagent scanning', () => {
     it('keeps the previous catalog when the subagent scan throws', async () => {
         const h = harness({
             agentFolders: () => ['/agents'],
-            scanAgents: async () => {
-                throw new Error('disk gone')
-            }
+            scanAgents: () => Promise.reject(new Error('disk gone'))
         })
         await h.coordinator.rescanSkills()
         expect(h.calls).not.toContain('setScannedEntries')
