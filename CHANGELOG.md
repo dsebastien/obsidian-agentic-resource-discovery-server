@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.1...1.2.2) (2026-09-23)
+
+### Bug Fixes
+
+* **build:** harden the release path from the template ([cc6a5ba](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/cc6a5ba51338398792b08cb972cdef720bf00b44))
+* **plugin:** clear the source findings the stricter lint surfaces ([89e302c](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/89e302c70caffd920ed41a5969aad07030a80fa3))
+
 ## [1.2.1](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.0...1.2.1) (2026-09-23)
 
 ### Bug Fixes
@@ -137,6 +144,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 

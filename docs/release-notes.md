@@ -1,5 +1,12 @@
 # Release Notes
 
+## 1.2.2 (2026-09-23)
+
+### Bug Fixes
+
+- **build:** harden the release path from the template
+- **plugin:** clear the source findings the stricter lint surfaces
+
 ## 1.2.1 (2026-09-23)
 
 ### Bug Fixes
