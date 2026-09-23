@@ -1,5 +1,15 @@
 # Release Notes
 
+## 1.1.0 (2026-09-23)
+
+### Features
+
+- skills are found by their own trigger phrases in lexical search
+
+### Bug Fixes
+
+- **deps:** move the fast-uri override off the vulnerable line
+
 ## 1.0.0 (2026-09-01)
 
 ### ⚠ BREAKING CHANGES

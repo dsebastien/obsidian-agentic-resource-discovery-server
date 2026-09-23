@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.0.0...1.1.0) (2026-09-23)
+
+### Features
+
+* skills are found by their own trigger phrases in lexical search ([f2a3c5a](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/f2a3c5a75abf95ec94a5c86bc2c238493cb5f761))
+
+### Bug Fixes
+
+* **deps:** move the fast-uri override off the vulnerable line ([362376a](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/362376a9f6d363155a8a963b61820b21a24e3715))
+
 ## [1.0.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/0.2.0...1.0.0) (2026-09-01)
 
 ### ⚠ BREAKING CHANGES
@@ -115,6 +125,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 
