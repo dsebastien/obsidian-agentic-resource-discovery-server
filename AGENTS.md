@@ -21,7 +21,7 @@
 
 - **Test-first (TDD), verify on real data.** Write the `*.spec.ts` red→green per module; run a single file with `bun test <path>`. The scanner/enricher are verified against the real ~395-skill vault at `/c/users/trankill/My Drive/Notes/Seb/.claude/skills` — a real-data smoke test already caught a `Date.slice` bug that unit tests missed.
 - **Frontmatter is untrusted.** `js-yaml` turns unquoted dates into `Date` objects and yields numbers/booleans; always coerce via `asString`/`asStringArray` (see `skills/skill-enricher.ts`) before string ops. Do **not** reintroduce `gray-matter` — it calls `yaml.safeLoad`, removed in the repo's pinned `js-yaml@4`.
-- **Lint gotchas:** plugin lifecycle methods return `void` (not `Promise`) — fire-and-forget with `void`; use `window.setTimeout`, never bare `setTimeout`; avoid `NodeJS.*` type references (`no-undef`); no `String(unknown)` (`no-base-to-string`) — narrow with `typeof x === 'string'`. `*.spec.ts` files may use `fetch` and `any` (override in `eslint.config.ts`).
+- **Lint gotchas:** plugin lifecycle methods return `void` (not `Promise`) — fire-and-forget with `void`; use `window.setTimeout`, never bare `setTimeout`; avoid `NodeJS.*` type references (`no-undef`); no `String(unknown)` (`no-base-to-string`) — narrow with `typeof x === 'string'`. Specs follow the same rules as production code (no `any`, no rule switched off for them): type response bodies with the production types, and use `Bun.fetch` for tests that hit the real local HTTP server.
 - **Always finish a change green:** `bun run validate` (tsc + tests + lint) and `bun run build`. Keep the plan's §1a status table updated and commit per milestone with a conventional-commit message (allowed scopes: `all`/`build`/`deps`/`docs`/`plugin`).
 
 ## Project Documentation
@@ -190,7 +190,10 @@ Both commands are **MANDATORY** after code changes. Fix any lint errors before p
 
 ## Bun Runtime
 
-Default to using Bun instead of Node.js.
+Default to using Bun instead of Node.js, with one exception: ESLint runs under Node.
+
+- `bunfig.toml` sets `[run] bun = false`, so scripts with a `node` shebang (eslint, tsc, prettier, commitlint) run under Node, as the community catalog reviewer's lint does. Under Bun, `node:module` `isBuiltin('bun:test')` is true and `obsidianmd/no-nodejs-modules` misreads every spec's `bun:test` import.
+- Node must be on PATH (version in `.nvmrc`). Without it, `bun run lint` stops with a message instead of reporting findings the reviewer never raises. CI sets Node up from `.nvmrc`. A desktop-only plugin (`isDesktopOnly: true`) is exempt from the check: the preset turns the Node-module rules off for it, so Bun lints it the same way.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
 - Use `bun test` instead of `jest` or `vitest`
@@ -343,7 +346,7 @@ the two statically-catchable ones.
 
 ## Versioning & releases
 
-- Bump `version` in `manifest.json` (SemVer) and update `versions.json` to map plugin version → minimum app version.
+- Bump `version` in `manifest.json` (SemVer). `versions.json` gets a new line ONLY when the release needs a newer Obsidian (`minAppVersion`) than the latest recorded release, so it stays a short list of compatibility boundaries. `scripts/version-bump.ts` (`nextVersions`) enforces this during `bun run release`; do not add lines by hand. Keys must be real released versions in `x.y.z` form: a leftover key above the current version (e.g. a template's `2.0.1`) is ignored and should be deleted.
 - Create a GitHub release whose tag exactly matches `manifest.json`'s `version`. Do not use a leading `v`.
 - Attach `manifest.json`, `main.js`, and `styles.css` (if present) to the release as individual assets.
 - After the initial release, follow the process to add/update your plugin in the community catalog as required.
