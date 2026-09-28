@@ -336,10 +336,15 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     name: 'Status',
                     // Live registry state, not a setting — keep it out of search.
                     searchable: false,
-                    render: (setting): void => {
+                    render: (setting): (() => void) => {
                         setting.settingEl.addClass('ard-settings-embed')
                         setting.infoEl.remove()
-                        this.renderStatusGrid(setting.settingEl)
+                        // In a wrapper removed by the returned cleanup: update()
+                        // (every rescan, while the tab is open) re-runs this hook
+                        // on the SAME row and only resets its control area
+                        const gridEl = setting.settingEl.createDiv()
+                        this.renderStatusGrid(gridEl)
+                        return () => gridEl.remove()
                     }
                 },
                 {
@@ -896,15 +901,16 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     searchable: false,
                     visible: (): boolean =>
                         isCustom() && !this.plugin.settings.searchBackend.apiBaseUrl?.trim(),
-                    render: (setting): void => {
+                    render: (setting): (() => void) => {
                         setting.settingEl.addClass('ard-settings-embed')
                         setting.infoEl.remove()
-                        setting.settingEl
-                            .createEl('p', {
-                                cls: 'ard-setting-warning',
-                                text: 'A base URL is required for the custom provider — search stays lexical until it is set.'
-                            })
-                            .setAttr('role', 'alert')
+                        const warningEl = setting.settingEl.createEl('p', {
+                            cls: 'ard-setting-warning',
+                            text: 'A base URL is required for the custom provider — search stays lexical until it is set.'
+                        })
+                        warningEl.setAttr('role', 'alert')
+                        // update() re-runs this hook on the SAME row
+                        return () => warningEl.remove()
                     }
                 },
                 {
@@ -966,16 +972,21 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 {
                     name: 'Support',
                     searchable: false,
-                    render: (setting): void => {
+                    render: (setting): (() => void) => {
                         setting.settingEl.addClass('ard-settings-embed')
                         setting.infoEl.remove()
-                        renderSharedSupportSection(setting.settingEl, (el) => {
+                        // In a wrapper removed by the returned cleanup: update() re-runs
+                        // this hook on the SAME row and only resets its control area, so
+                        // content appended straight to settingEl would pile up.
+                        const blockEl = setting.settingEl.createDiv()
+                        renderSharedSupportSection(blockEl, (el) => {
                             const linkEl = el.createEl('a', { href: BUY_ME_A_COFFEE_URL })
                             const imgEl = linkEl.createEl('img')
                             imgEl.src = BUY_ME_A_COFFEE_BADGE_DATA_URL
                             imgEl.alt = 'Buy me a coffee'
                             imgEl.width = 175
                         })
+                        return () => blockEl.remove()
                     }
                 }
             ]
