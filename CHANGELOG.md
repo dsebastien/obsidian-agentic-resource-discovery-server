@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.2...1.2.3) (2026-09-28)
+
+### Bug Fixes
+
+* **build:** name the last release before a floor raise in versions.json ([13260f3](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/13260f34a1182b08d46175b85f3729858a45f05d))
+* **build:** rebuild versions.json from the published releases ([60a4f9e](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/60a4f9ec0bd82cc4f1ae452438a8e4bc09c133e4))
+* **plugin:** keep the support block from stacking on every settings refresh ([11578c8](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/11578c87530b37186c46f214453ae66efee7b4a1))
+
 ## [1.2.2](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.1...1.2.2) (2026-09-23)
 
 ### Bug Fixes
@@ -144,6 +152,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 
