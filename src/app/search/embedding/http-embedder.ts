@@ -13,8 +13,11 @@ export interface HttpEmbedderConfig {
     url: string
     /** Model name the server should use, e.g. `nomic-embed-text`. */
     model: string
-    /** Optional bearer token (some local servers / hosted gateways require one). */
-    apiKey?: string
+    /**
+     * Optional bearer token reader (some local servers / hosted gateways require
+     * one), called per request so the key is never captured.
+     */
+    apiKey?: () => string | undefined
 }
 
 /** Largest batch sent in one request — keeps payloads modest on big catalogs. */
@@ -78,8 +81,9 @@ export class HttpEmbedder implements Embedder {
     /** POST one batch and return L2-normalised vectors in input order. */
     private async request(texts: string[]): Promise<Float32Array[]> {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (this.config.apiKey) {
-            headers['Authorization'] = `Bearer ${this.config.apiKey}`
+        const apiKey = this.config.apiKey?.()
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`
         }
         const { status, json } = await this.client({
             url: this.endpoint,

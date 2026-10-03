@@ -140,7 +140,7 @@ describe('projectMcpConfigAffected', () => {
     const on: PluginSettings = {
         ...DEFAULT_SETTINGS,
         syncProjectMcpConfig: true,
-        server: { ...DEFAULT_SETTINGS.server, bearerToken: 'a' }
+        server: { ...DEFAULT_SETTINGS.server, bearerTokenSecretName: 'a' }
     }
 
     it('fires when the sync is turned on', () => {
@@ -152,7 +152,10 @@ describe('projectMcpConfigAffected', () => {
             true
         )
         expect(
-            projectMcpConfigAffected(on, { ...on, server: { ...on.server, bearerToken: 'b' } })
+            projectMcpConfigAffected(on, {
+                ...on,
+                server: { ...on.server, bearerTokenSecretName: 'b' }
+            })
         ).toBe(true)
         expect(projectMcpConfigAffected(on, { ...on, projectMcpServerName: 'vault' })).toBe(true)
     })

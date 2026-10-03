@@ -9,22 +9,31 @@ All settings live in the plugin's settings tab, grouped into five sections.
 
 ## Server
 
-| Setting                  | Type             | Default                                       | Description                                                                                                             |
-| ------------------------ | ---------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Port                     | number           | `27182`                                       | The registry listens on `127.0.0.1` at this port (1024–65535).                                                          |
-| Bearer token             | text (read-only) | generated on first run                        | Required on every request except the public catalog. Use **Copy** / **Regenerate**.                                     |
-| Keep .mcp.json in sync   | toggle           | off                                           | Writes this server's entry into the `.mcp.json` file at the vault root. See below.                                      |
-| Server name in .mcp.json | text             | `ard`                                         | The name this server is listed under in `.mcp.json`.                                                                    |
-| Publisher                | text             | `obsidian`                                    | The publisher segment of every URN (`urn:air:<publisher>:…`). Set a real domain you own if you ever publish externally. |
-| Catalog name             | text             | `Personal Obsidian Agentic Resource Registry` | Display name in the catalog's `host` block.                                                                             |
+| Setting                  | Type   | Default                                       | Description                                                                                                             |
+| ------------------------ | ------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Port                     | number | `27182`                                       | The registry listens on `127.0.0.1` at this port (1024–65535).                                                          |
+| Bearer token             | secret | generated on first run                        | Required on every request except the public catalog. Kept in Obsidian's secret storage. Use **Copy** / **Regenerate**.  |
+| Keep .mcp.json in sync   | toggle | off                                           | Writes this server's entry into the `.mcp.json` file at the vault root. See below.                                      |
+| Server name in .mcp.json | text   | `ard`                                         | The name this server is listed under in `.mcp.json`.                                                                    |
+| Publisher                | text   | `obsidian`                                    | The publisher segment of every URN (`urn:air:<publisher>:…`). Set a real domain you own if you ever publish externally. |
+| Catalog name             | text   | `Personal Obsidian Agentic Resource Registry` | Display name in the catalog's `host` block.                                                                             |
 
 The **bind address is always `127.0.0.1`** and is not user-configurable — the registry is never exposed to the network.
+
+### Secrets and synced devices
+
+The bearer token and the hosted API key live in Obsidian's **secret storage**, which stays on each device and never syncs with your vault. The plugin data file only records the secret's name.
+
+- **Upgrading from an older version:** nothing to do. Each device moves its token and key into its own secret storage the first time it starts this version, so your MCP clients and every synced device keep working.
+- Older versions kept a plain-text copy in the plugin data file. It stays there for 60 days so devices you haven't opened yet can still migrate, then it is deleted automatically. Once all your devices run this version, **Remove plain-text copy now** (Server section) deletes it right away.
+- **Regenerate**, picking another secret, or clearing the API key update secret storage only and drop the plain-text copy.
+- If a device shows **Bearer token missing**, its secret storage has no value for the configured name (for example a device set up after the plain-text copy was removed). Use the picker to give it the same value as on your other devices; the token is never regenerated behind your back, because that would disconnect your clients.
 
 ### Keep .mcp.json in sync
 
 Claude Code (and other MCP clients that read project config) looks for a `.mcp.json` file in the folder you start it from. Turn this on and the plugin keeps an entry for this server in the `.mcp.json` at the root of your vault, so running `claude` in the vault finds your skills with no setup.
 
-- It writes right away when you turn it on, when the plugin loads, and whenever the port or the bearer token changes (including **Regenerate**).
+- It writes right away when you turn it on, when the plugin loads, and whenever the port or the bearer token changes (including **Regenerate**). The token is read from secret storage.
 - Only its own entry is touched. Other servers and settings in the file stay as they are, and the file is only rewritten when something actually changed.
 - If `.mcp.json` exists but isn't valid JSON, the plugin leaves it alone and shows a notice once.
 - Turning it off leaves the file as it is; delete the entry yourself if you no longer want it.
@@ -71,7 +80,7 @@ With Ollama, a typical setup is `ollama pull nomic-embed-text` and leaving the d
 
 - **Provider** — `openai`, `voyage`, `jina`, or `custom`. For `custom`, also set an **API base URL** (any OpenAI-compatible gateway — Azure OpenAI, OpenRouter, a self-hosted proxy, …).
 - **Model** — leave blank to use the provider default (e.g. `text-embedding-3-small` for OpenAI).
-- **API key** — sent as a Bearer token; stored in plugin data, so treat it as a secret. **Privacy note:** your search queries and skill metadata (names, descriptions, tags) are sent to the provider to be embedded. Skill _bodies_ are never sent.
+- **API key** — sent as a Bearer token; pick or create it with the secret picker (kept in Obsidian's secret storage on this device, not in plugin data). The trash button clears it. **Privacy note:** your search queries and skill metadata (names, descriptions, tags) are sent to the provider to be embedded. Skill _bodies_ are never sent.
 
 If the embedding endpoint is unreachable, slow to start, or rejects the key, searches **fall back to lexical automatically** — search never breaks. Changing any backend field restarts the registry. This honors the plugin's zero-mandatory-download principle: lexical stays the default.
 
@@ -81,6 +90,6 @@ Embeddings build in the background after each scan, so semantic ranking turns on
 
 ## Where settings are stored
 
-Settings persist in the vault's plugin data (`.obsidian/plugins/agentic-resource-discovery-server/data.json`). The bearer token and any API keys are stored there — treat that file as sensitive. Settings are validated on load, so a corrupt or partial file falls back to safe defaults rather than failing.
+Settings persist in the vault's plugin data (`.obsidian/plugins/agentic-resource-discovery-server/data.json`). The bearer token and API key are not stored there: they live in Obsidian's secret storage on each device, and the file only holds their names (plus, for 60 days after upgrading, a plain-text copy from older versions; see [Secrets and synced devices](#secrets-and-synced-devices)). Settings are validated on load, so a corrupt or partial file falls back to safe defaults rather than failing.
 
 With a semantic backend, cached embedding vectors are kept next to it in `embedding-cache.json`. It contains no secrets and is safe to delete — the next scan simply rebuilds it.

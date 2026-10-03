@@ -7,6 +7,7 @@ import {
 } from '../types/plugin-settings.intf'
 
 const TOKEN = 'controller-token'
+const SECRETS = { bearerToken: () => TOKEN, embeddingApiKey: () => undefined }
 
 const mcpResource = (over: Partial<ManualResource> = {}): ManualResource => ({
     id: 'r1',
@@ -25,7 +26,7 @@ const mcpResource = (over: Partial<ManualResource> = {}): ManualResource => ({
 // Build settings directly (port 0 = ephemeral) bypassing the 1024 min on the user schema.
 const settingsWith = (resources: ManualResource[]): PluginSettings => ({
     ...DEFAULT_SETTINGS,
-    server: { ...DEFAULT_SETTINGS.server, port: 0, bearerToken: TOKEN },
+    server: { ...DEFAULT_SETTINGS.server, port: 0 },
     resources
 })
 
@@ -38,7 +39,7 @@ describe('RegistryController', () => {
     })
 
     it('starts a server that serves the catalog built from manual resources', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
         expect(controller.isRunning).toBe(true)
         expect(controller.catalogSize).toBe(1)
@@ -51,7 +52,7 @@ describe('RegistryController', () => {
     })
 
     it('makes resources searchable with the registry base url as the source', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
 
         const res = await Bun.fetch(`http://127.0.0.1:${controller.port}/search`, {
@@ -67,14 +68,14 @@ describe('RegistryController', () => {
     })
 
     it('stops cleanly', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
         await controller.stop()
         expect(controller.isRunning).toBe(false)
     })
 
     it('rebuilds the catalog in place without restarting the server', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
         const port = controller.port
 
@@ -94,14 +95,14 @@ describe('RegistryController', () => {
     })
 
     it('does not flag embeddings for retry on the lexical backend', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
         // Lexical has no embedding index, so there is nothing to retry.
         expect(controller.embeddingsNeedRetry).toBe(false)
     })
 
     it('reindexes the current catalog in place and keeps serving searches', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
         const port = controller.port
 
@@ -119,13 +120,13 @@ describe('RegistryController', () => {
     })
 
     it('reindex is a safe no-op when the registry is not running', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.reindex() // must not throw
         expect(controller.isRunning).toBe(false)
     })
 
     it('merges scanned skill entries with manual resources', async () => {
-        controller = new RegistryController()
+        controller = new RegistryController(undefined, SECRETS)
         await controller.start(settingsWith([mcpResource()]))
 
         await controller.setSkillEntries(

@@ -120,7 +120,7 @@ async function buildRouter() {
         search,
         skillFiles: fakeSkillFiles,
         artifacts: new LocalArtifactStore(),
-        bearerToken: TOKEN,
+        bearerToken: () => TOKEN,
         baseUrl: BASE_URL,
         enableCors: true
     })
@@ -134,7 +134,7 @@ function routerDeps(search: LexicalSearchBackend) {
         search,
         skillFiles: fakeSkillFiles,
         artifacts: new LocalArtifactStore(),
-        bearerToken: TOKEN,
+        bearerToken: () => TOKEN,
         baseUrl: BASE_URL,
         enableCors: true
     }
@@ -657,7 +657,7 @@ describe('registry router', () => {
             search,
             skillFiles: fakeSkillFiles,
             artifacts: new LocalArtifactStore(),
-            bearerToken: TOKEN,
+            bearerToken: () => TOKEN,
             baseUrl: BASE_URL,
             enableCors: true
         })

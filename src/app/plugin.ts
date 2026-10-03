@@ -11,7 +11,20 @@ import { PersistentEmbeddingCache } from './search/embedding/persistent-embeddin
 import { scanAgentFolders, type AgentScanResult } from './agents/agent-scanner'
 import { scanSkillFolders, type ScanResult } from './skills/skill-scanner'
 import { SkillWatcher, nodeFsWatchFn } from './skills/skill-watcher'
-import { generateBearerToken, isBlankToken } from './utils/token'
+import { generateBearerToken } from './utils/token'
+import {
+    clearSecret,
+    ensureBearerTokenSecret,
+    isSecretMissing,
+    migrateLegacySecrets,
+    removeLegacySecretCopies,
+    resolveBearerToken,
+    resolveEmbeddingApiKey,
+    rotateSecret,
+    selectSecretName,
+    type SecretField,
+    type SecretStore
+} from './settings/secrets'
 import { log } from '../utils/log'
 import {
     PROJECT_MCP_CONFIG_PATH,
@@ -46,7 +59,11 @@ export class ArdServerPlugin extends Plugin {
         write: (data) => this.writeEmbeddingCache(data)
     })
 
-    readonly registry = new RegistryController(this.embeddingCache)
+    readonly registry = new RegistryController(this.embeddingCache, {
+        // Read per use from SecretStorage: never captured into settings.
+        bearerToken: () => this.bearerToken(),
+        embeddingApiKey: () => resolveEmbeddingApiKey(this.settings, this.secretStore)
+    })
 
     /** Kept so a background rescan can refresh the open settings tab's scan stats. */
     private settingTab: ArdServerSettingTab | null = null
@@ -99,7 +116,7 @@ export class ArdServerPlugin extends Plugin {
         registerWhatsNewView(this)
         log('Initializing', 'debug')
         await this.loadSettings()
-        await this.ensureBearerToken()
+        await this.prepareSecrets()
         // Warm embeddings from the previous session so a semantic backend is
         // ready immediately instead of re-embedding the whole catalog.
         await this.embeddingCache.load()
@@ -137,16 +154,89 @@ export class ArdServerPlugin extends Plugin {
         this.settings = parsePluginSettings(await this.loadData())
     }
 
-    /** Generate and persist a bearer token on first run (when none exists yet). */
-    async ensureBearerToken(): Promise<void> {
-        if (!isBlankToken(this.settings.server.bearerToken)) {
-            return
+    /** This device's Obsidian SecretStorage. */
+    get secretStore(): SecretStore {
+        return this.app.secretStorage
+    }
+
+    /** Bearer token in effect on this device ("" when it is missing here). */
+    bearerToken(): string {
+        return resolveBearerToken(this.settings, this.secretStore)
+    }
+
+    /** Whether a configured secret has no value on this device. */
+    secretMissing(field: SecretField): boolean {
+        return isSecretMissing(this.settings, this.secretStore, field)
+    }
+
+    /**
+     * Per-device secret setup, on every load: copy legacy plaintext secrets into
+     * this device's SecretStorage (purging them after the grace period), then
+     * generate a bearer token on a fresh install only. A secret configured but
+     * absent here is reported, never regenerated (that would break clients).
+     */
+    async prepareSecrets(): Promise<void> {
+        try {
+            const migration = migrateLegacySecrets(this.settings, this.secretStore)
+            if (migration.failed.length > 0) {
+                log(
+                    `Could not move ${migration.failed.join(', ')} to secret storage; using the stored value`,
+                    'warn'
+                )
+            }
+            const ensured = ensureBearerTokenSecret(
+                migration.settings,
+                this.secretStore,
+                generateBearerToken
+            )
+            if (migration.changed || ensured.state === 'generated') {
+                this.settings = ensured.settings
+                await this.saveSettings()
+            }
+            if (ensured.state === 'missing') {
+                new Notice(
+                    `ARD: the bearer token secret "${this.settings.server.bearerTokenSecretName}" is not set on ` +
+                        'this device, so the registry refuses authenticated requests. Open the plugin ' +
+                        'settings and set the token on this device (same value as on your other devices).',
+                    0
+                )
+            }
+            if (
+                this.settings.searchBackend.kind === 'hosted-api' &&
+                this.secretMissing('embeddingApiKey')
+            ) {
+                new Notice(
+                    `ARD: the embedding API key secret "${this.settings.searchBackend.apiKeySecretName}" is ` +
+                        'not set on this device. Set it in the plugin settings (Search backend).'
+                )
+            }
+        } catch (error) {
+            log('Failed to prepare secrets', 'error', error)
+            new Notice('Could not access secret storage, so the registry may refuse requests.')
         }
-        log('Generating bearer token (first run)', 'debug')
-        this.settings = produce(this.settings, (draft) => {
-            draft.server.bearerToken = generateBearerToken()
-        })
-        await this.saveSettings()
+    }
+
+    /** Replace the bearer token (SecretStorage only); old clients stop working. */
+    async regenerateBearerToken(): Promise<void> {
+        await this.commitSettings((current) =>
+            rotateSecret(current, this.secretStore, 'bearerToken', generateBearerToken())
+        )
+        await this.syncProjectMcpConfig()
+    }
+
+    /** Point a secret at another SecretStorage entry (picked in the settings tab). */
+    selectSecret(field: SecretField, name: string): Promise<void> {
+        return this.commitSettings((current) => selectSecretName(current, field, name))
+    }
+
+    /** Clear a secret on this device and drop its plain-text copy. */
+    clearSecret(field: SecretField): Promise<void> {
+        return this.commitSettings((current) => clearSecret(current, this.secretStore, field))
+    }
+
+    /** Drop the legacy plain-text secret copies from data.json now. */
+    removeLegacySecretCopies(): Promise<void> {
+        return this.commitSettings((current) => removeLegacySecretCopies(current))
     }
 
     /** Serializes settings writes; see updateSettings. */
@@ -166,9 +256,18 @@ export class ArdServerPlugin extends Plugin {
      * every intermediate state in order.
      */
     updateSettings(updater: (draft: Draft<PluginSettings>) => void): Promise<void> {
+        return this.commitSettings((current) => produce(current, updater))
+    }
+
+    /**
+     * {@link updateSettings} for a whole-settings transition (used by the pure
+     * secret helpers). `compute` runs inside the write chain, on the latest
+     * committed settings.
+     */
+    private commitSettings(compute: (current: PluginSettings) => PluginSettings): Promise<void> {
         const run = async (): Promise<void> => {
             const previous = this.settings
-            const next = produce(this.settings, updater)
+            const next = compute(this.settings)
             await this.saveData(next)
             this.settings = next
             await this.coordinator.applySettings(previous, this.settings)
@@ -194,7 +293,7 @@ export class ArdServerPlugin extends Plugin {
         try {
             const outcome = await this.projectMcpSync.sync({
                 port: this.registry.port ?? settings.server.port,
-                bearerToken: settings.server.bearerToken,
+                bearerToken: this.bearerToken(),
                 serverName: settings.projectMcpServerName
             })
             log(`Project .mcp.json sync: ${outcome}`, outcome === 'invalid' ? 'warn' : 'debug')

@@ -66,7 +66,7 @@ To use it as an MCP server, point your MCP client at `http://127.0.0.1:27182/mcp
 
 ## Privacy & security
 
-Everything stays on your machine: the server binds to `127.0.0.1` only, every endpoint except the public catalog requires a bearer token, skill file serving is confined to your configured folders (path-traversal-safe), and the `execute` sandbox has no network or filesystem access. No telemetry, no cloud.
+Everything stays on your machine: the server binds to `127.0.0.1` only, every endpoint except the public catalog requires a bearer token (kept, like any API key, in Obsidian's secret storage on each device, never in the synced plugin data), skill file serving is confined to your configured folders (path-traversal-safe), and the `execute` sandbox has no network or filesystem access. No telemetry, no cloud.
 
 ## License
 

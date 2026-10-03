@@ -21,7 +21,10 @@ describe('parsePluginSettings', () => {
         const settings = parsePluginSettings({})
         expect(settings.server.bindAddress).toBe('127.0.0.1')
         expect(settings.server.port).toBe(27182)
-        expect(settings.server.bearerToken).toBe('')
+        expect(settings.server.bearerTokenSecretName).toBe('')
+        expect(settings.server.bearerToken).toBeUndefined()
+        expect(settings.searchBackend.apiKeySecretName).toBe('')
+        expect(settings.legacySecretMigratedAt).toBeUndefined()
         expect(settings.searchBackend.kind).toBe('lexical')
         expect(settings.skillFolders).toEqual([])
     })
@@ -43,7 +46,7 @@ describe('parsePluginSettings', () => {
         expect(settings.server.port).toBe(27182)
     })
 
-    it('preserves a previously generated bearer token', () => {
+    it('preserves a legacy plaintext bearer token (the per-device migration source)', () => {
         const token = 'a'.repeat(64)
         expect(parsePluginSettings({ server: { bearerToken: token } }).server.bearerToken).toBe(
             token

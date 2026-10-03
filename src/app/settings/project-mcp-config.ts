@@ -141,13 +141,17 @@ export class ProjectMcpConfigSync {
     }
 }
 
-/** Whether a settings change can alter what `.mcp.json` should contain. */
+/**
+ * Whether a settings change can alter what `.mcp.json` should contain. A token
+ * rotated under the same secret name changes no setting: the plugin re-syncs
+ * explicitly after a rotation.
+ */
 export function projectMcpConfigAffected(previous: PluginSettings, next: PluginSettings): boolean {
     return (
         next.syncProjectMcpConfig &&
         (!previous.syncProjectMcpConfig ||
             previous.server.port !== next.server.port ||
-            previous.server.bearerToken !== next.server.bearerToken ||
+            previous.server.bearerTokenSecretName !== next.server.bearerTokenSecretName ||
             previous.projectMcpServerName !== next.projectMcpServerName)
     )
 }

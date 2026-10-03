@@ -64,7 +64,17 @@ export const SearchBackendConfigSchema = z.object({
     // hosted-api options: a remote OpenAI-compatible embedding API (BYO key).
     apiProvider: z.enum(HOSTED_EMBEDDING_PROVIDERS).default('openai').catch('openai'),
     apiBaseUrl: z.string().optional(),
-    apiKey: z.string().optional(),
+    /**
+     * Name of the Obsidian SecretStorage entry holding the API key ("" = none).
+     * Only the name is persisted; the key itself never reaches data.json.
+     */
+    apiKeySecretName: z.string().default('').catch(''),
+    /**
+     * Legacy plaintext API key (before SecretStorage). Read-only bootstrap: each
+     * device copies it into its own SecretStorage on load; never written again,
+     * removed on change/clear or after the grace period.
+     */
+    apiKey: z.string().optional().catch(undefined),
     apiModel: z.string().optional(),
     enableHybrid: z.boolean().default(false).catch(false)
 })
@@ -78,8 +88,18 @@ export const ServerSettingsSchema = z.object({
      * other value (e.g. an attempt to expose it on the LAN) resets to 127.0.0.1.
      */
     bindAddress: z.literal('127.0.0.1').default('127.0.0.1').catch('127.0.0.1'),
-    /** "" until generated on first run. */
-    bearerToken: z.string().default('').catch(''),
+    /**
+     * Name of the Obsidian SecretStorage entry holding the bearer token. "" until
+     * the token is generated on first run (or migrated). Only the name is
+     * persisted; the token itself never reaches data.json.
+     */
+    bearerTokenSecretName: z.string().default('').catch(''),
+    /**
+     * Legacy plaintext bearer token (before SecretStorage). Read-only bootstrap:
+     * each device copies it into its own SecretStorage on load; never written
+     * again, removed on regenerate or after the grace period.
+     */
+    bearerToken: z.string().optional().catch(undefined),
     enableCors: z.boolean().default(true).catch(true)
 })
 
@@ -128,12 +148,21 @@ export const PluginSettingsSchema = z.object({
         SearchBackendConfigSchema.parse({})
     ).catch(() => SearchBackendConfigSchema.parse({})),
     // Internal, not user-editable
+    /**
+     * When legacy plaintext secrets were first copied into SecretStorage (ISO).
+     * The plaintext stays in data.json as a per-device bootstrap for other synced
+     * devices, then is purged {@link LEGACY_SECRET_GRACE_DAYS} days after this.
+     */
+    legacySecretMigratedAt: z.string().optional().catch(undefined),
     lastScanStats: LastScanStatsSchema.default(() => LastScanStatsSchema.parse({})).catch(() =>
         LastScanStatsSchema.parse({})
     )
 })
 
 export type PluginSettings = z.infer<typeof PluginSettingsSchema>
+
+/** Days the legacy plaintext secrets stay in data.json after the first migration. */
+export const LEGACY_SECRET_GRACE_DAYS = 60
 
 /** The canonical default settings (first-run state). */
 export const DEFAULT_SETTINGS: PluginSettings = PluginSettingsSchema.parse({})

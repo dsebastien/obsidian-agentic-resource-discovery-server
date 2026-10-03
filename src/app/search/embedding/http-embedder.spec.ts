@@ -22,7 +22,7 @@ describe('HttpEmbedder', () => {
     it('posts OpenAI-compatible embedding requests to the configured endpoint', async () => {
         const seen: { url: string; headers: Record<string, string>; body: string }[] = []
         const embedder = new HttpEmbedder(
-            { url: 'http://localhost:11434/v1', model: 'nomic-embed-text', apiKey: 'secret' },
+            { url: 'http://localhost:11434/v1', model: 'nomic-embed-text', apiKey: () => 'secret' },
             fakeClient(
                 () => [3, 4],
                 (req) => seen.push(req)

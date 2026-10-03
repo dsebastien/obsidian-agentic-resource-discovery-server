@@ -30,7 +30,7 @@ async function startServer(): Promise<ArdHttpServer> {
             file: () => Promise.resolve('not-found' as const)
         },
         artifacts: new LocalArtifactStore(),
-        bearerToken: TOKEN,
+        bearerToken: () => TOKEN,
         baseUrl: 'http://127.0.0.1',
         enableCors: true
     })
@@ -108,7 +108,7 @@ describe('ArdHttpServer', () => {
                 file: () => Promise.resolve('not-found' as const)
             },
             artifacts: new LocalArtifactStore(),
-            bearerToken: TOKEN,
+            bearerToken: () => TOKEN,
             baseUrl: 'http://127.0.0.1',
             enableCors: true
         })

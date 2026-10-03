@@ -272,7 +272,7 @@ describe('requiresRestart', () => {
             (d) => void (d.searchBackend.embeddingModel = 'other-model'),
             (d) => void (d.searchBackend.apiProvider = 'voyage'),
             (d) => void (d.searchBackend.apiBaseUrl = 'https://gw.example/v1'),
-            (d) => void (d.searchBackend.apiKey = 'sk-new'),
+            (d) => void (d.searchBackend.apiKeySecretName = 'other-key'),
             (d) => void (d.searchBackend.apiModel = 'embed-2')
         ]
         for (const mutate of fields) {

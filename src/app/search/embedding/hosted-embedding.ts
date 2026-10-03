@@ -27,21 +27,25 @@ const PROVIDERS: Record<Exclude<HostedProvider, 'custom'>, ProviderDefaults> = {
 /**
  * Resolve the {@link HttpEmbedderConfig} for the `hosted-api` backend from
  * settings: a base URL (from the provider, or `apiBaseUrl` for `custom`), the
- * chosen model (falling back to the provider default), and the API key.
+ * chosen model (falling back to the provider default), and the API key reader
+ * (the key lives in SecretStorage and is read per request).
  */
-export function resolveHostedEmbedderConfig(config: SearchBackendConfig): HttpEmbedderConfig {
+export function resolveHostedEmbedderConfig(
+    config: SearchBackendConfig,
+    apiKey: () => string | undefined
+): HttpEmbedderConfig {
     const provider: HostedProvider = config.apiProvider ?? 'openai'
     if (provider === 'custom') {
         return {
             url: config.apiBaseUrl?.trim() ?? '',
             model: config.apiModel?.trim() ?? '',
-            apiKey: config.apiKey
+            apiKey
         }
     }
     const defaults = PROVIDERS[provider]
     return {
         url: defaults.baseUrl,
         model: config.apiModel?.trim() || defaults.defaultModel,
-        apiKey: config.apiKey
+        apiKey
     }
 }

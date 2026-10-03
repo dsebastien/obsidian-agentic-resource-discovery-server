@@ -21,10 +21,12 @@ import { SemanticSearchBackend } from './semantic-search-backend'
  *
  * `cache` (optional) persists embedding vectors across reloads so a warm start
  * skips re-embedding unchanged skills; the lexical backend ignores it.
+ * `apiKey` reads the hosted API key (from SecretStorage) at request time.
  */
 export function createSearchBackend(
     config: SearchBackendConfig,
-    cache?: EmbeddingCache
+    cache?: EmbeddingCache,
+    apiKey: () => string | undefined = () => undefined
 ): SearchBackend {
     switch (config.kind) {
         case 'local-model':
@@ -37,7 +39,7 @@ export function createSearchBackend(
             )
         case 'hosted-api':
             return new SemanticSearchBackend(
-                new HttpEmbedder(resolveHostedEmbedderConfig(config)),
+                new HttpEmbedder(resolveHostedEmbedderConfig(config, apiKey)),
                 cache
             )
         case 'lexical':

@@ -26,6 +26,19 @@ export const EMPTY_SNAPSHOT: ScanSnapshot = {
 }
 
 /**
+ * Secret values the registry needs, read at use time (from Obsidian's
+ * SecretStorage in the plugin) — never captured from settings.
+ */
+export interface RegistrySecrets {
+    /** Current server bearer token ("" = none: authenticated requests are refused). */
+    bearerToken: () => string
+    /** Current hosted embedding API key, if any. */
+    embeddingApiKey: () => string | undefined
+}
+
+const NO_SECRETS: RegistrySecrets = { bearerToken: () => '', embeddingApiKey: () => undefined }
+
+/**
  * Owns the running registry: catalog, search index, skill file service, and the
  * HTTP server.
  *
@@ -38,7 +51,10 @@ export class RegistryController {
      * @param embeddingCache reused across restarts so switching settings (or
      * reloading the plugin) doesn't re-embed unchanged skills.
      */
-    constructor(private readonly embeddingCache?: EmbeddingCache) {}
+    constructor(
+        private readonly embeddingCache?: EmbeddingCache,
+        private readonly secrets: RegistrySecrets = NO_SECRETS
+    ) {}
 
     private search: SearchBackend = new LexicalSearchBackend()
     private server: ArdHttpServer | null = null
@@ -52,7 +68,11 @@ export class RegistryController {
     async start(settings: PluginSettings): Promise<void> {
         await this.stop()
 
-        this.search = createSearchBackend(settings.searchBackend, this.embeddingCache)
+        this.search = createSearchBackend(
+            settings.searchBackend,
+            this.embeddingCache,
+            this.secrets.embeddingApiKey
+        )
         const baseUrl = `http://127.0.0.1:${settings.server.port}`
         const catalog = await this.buildCatalog(settings)
         const deps: RouterDeps = {
@@ -60,7 +80,7 @@ export class RegistryController {
             search: this.search,
             skillFiles: new FsSkillFileService(this.snapshot.skills.folders, baseUrl),
             artifacts: this.artifacts,
-            bearerToken: settings.server.bearerToken,
+            bearerToken: this.secrets.bearerToken,
             baseUrl,
             enableCors: settings.server.enableCors
         }
@@ -88,7 +108,6 @@ export class RegistryController {
             this.deps.baseUrl
         )
         this.deps.artifacts = this.artifacts
-        this.deps.bearerToken = settings.server.bearerToken
         this.deps.enableCors = settings.server.enableCors
         this.catalog = catalog
     }

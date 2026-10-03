@@ -9,12 +9,6 @@
     @apply mb-5;
 }
 
-/* Bearer token field — monospace so the secret is readable/selectable */
-.ard-token-field {
-    @apply font-mono;
-    width: 100%;
-}
-
 /* Invalid text input (e.g. out-of-range port) */
 .ard-invalid {
     border-color: var(--text-error);

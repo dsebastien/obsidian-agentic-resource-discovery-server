@@ -46,7 +46,11 @@ export interface RouterDeps {
     skillFiles: SkillFileService
     /** URN-bound artifacts (SKILL.md files, subagent definitions). */
     artifacts: LocalArtifactStore
-    bearerToken: string
+    /**
+     * Current bearer token, read per request from SecretStorage so a regenerated
+     * or re-entered token applies at once. "" rejects every authenticated request.
+     */
+    bearerToken: () => string
     /** Registry base URL, surfaced as `source` on each search result. */
     baseUrl: string
     enableCors: boolean
@@ -111,7 +115,7 @@ export function createRouter(deps: RouterDeps): RouteHandler {
         }
 
         // ----- Everything else requires the bearer token -----
-        if (!isAuthenticated(req, deps.bearerToken)) {
+        if (!isAuthenticated(req, deps.bearerToken())) {
             return errorResponse(deps, 401, 'UNAUTHENTICATED', 'Missing or invalid bearer token', {
                 'www-authenticate': 'Bearer realm="ard-registry"'
             })

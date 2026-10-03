@@ -252,7 +252,7 @@ export class RegistryCoordinator {
  *
  * The bind address and port are baked into the listening socket, and the search
  * backend is built once at start — capturing its config (embedding server URL,
- * model, API credentials) — so any of those changing must recreate it.
+ * model, API key secret name; the key value itself is read per request) — so any of those changing must recreate it.
  */
 export function requiresRestart(previous: PluginSettings, next: PluginSettings): boolean {
     const prevBackend = previous.searchBackend
@@ -263,7 +263,7 @@ export function requiresRestart(previous: PluginSettings, next: PluginSettings):
         prevBackend.embeddingModel !== nextBackend.embeddingModel ||
         prevBackend.apiProvider !== nextBackend.apiProvider ||
         prevBackend.apiBaseUrl !== nextBackend.apiBaseUrl ||
-        prevBackend.apiKey !== nextBackend.apiKey ||
+        prevBackend.apiKeySecretName !== nextBackend.apiKeySecretName ||
         prevBackend.apiModel !== nextBackend.apiModel
     return (
         previous.server.port !== next.server.port ||

@@ -1,4 +1,4 @@
-import { Notice, PluginSettingTab } from 'obsidian'
+import { Notice, PluginSettingTab, SecretComponent } from 'obsidian'
 import type { App, Setting, SettingDefinitionItem, SettingGroupItem } from 'obsidian'
 import type ArdServerPlugin from '../../main'
 import {
@@ -10,7 +10,8 @@ import {
 } from '../types/plugin-settings.intf'
 import { BUY_ME_A_COFFEE_BADGE_DATA_URL } from '../assets/buy-me-a-coffee'
 import { FolderSuggest } from './components/folder-suggest'
-import { generateBearerToken } from '../utils/token'
+import { hasLegacySecretCopies, type SecretField } from './secrets'
+import { LEGACY_SECRET_GRACE_DAYS } from '../types/plugin-settings.intf'
 import { MCP_TOOL_NAMES } from '../mcp/mcp-server'
 import {
     buildMcpClientConfig,
@@ -405,26 +406,63 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     .setButtonText('Copy MCP config')
                     .setCta()
                     .onClick(() => {
-                        void this.copyToClipboard(
-                            buildMcpClientConfig({
-                                port,
-                                bearerToken: this.plugin.settings.server.bearerToken
-                            }),
-                            'MCP client config copied'
-                        )
+                        const bearerToken = this.currentBearerToken()
+                        if (bearerToken) {
+                            void this.copyToClipboard(
+                                buildMcpClientConfig({ port, bearerToken }),
+                                'MCP client config copied'
+                            )
+                        }
                     })
             )
             .addButton((button) =>
                 button.setButtonText('Copy curl example').onClick(() => {
-                    void this.copyToClipboard(
-                        buildSearchCurlExample({
-                            port,
-                            bearerToken: this.plugin.settings.server.bearerToken
-                        }),
-                        'curl example copied'
-                    )
+                    const bearerToken = this.currentBearerToken()
+                    if (bearerToken) {
+                        void this.copyToClipboard(
+                            buildSearchCurlExample({ port, bearerToken }),
+                            'curl example copied'
+                        )
+                    }
                 })
             )
+    }
+
+    /** The bearer token from SecretStorage, or null (with a Notice) when unset here. */
+    private currentBearerToken(): string | null {
+        const token = this.plugin.bearerToken()
+        if (token.length === 0) {
+            new Notice('The Bearer token is not set on this device. Set it in the server section.')
+            return null
+        }
+        return token
+    }
+
+    /**
+     * Inline warning row shown when a configured secret has no value on this
+     * device (SecretStorage is device-local).
+     */
+    private missingSecretRow(
+        name: string,
+        field: SecretField,
+        message: string,
+        visible: () => boolean = () => true
+    ): SettingGroupItem {
+        return {
+            name,
+            searchable: false,
+            visible: (): boolean => visible() && this.plugin.secretMissing(field),
+            render: (setting): (() => void) => {
+                setting.settingEl.addClass('ard-settings-embed')
+                setting.infoEl.remove()
+                const warningEl = setting.settingEl.createEl('p', {
+                    cls: 'ard-setting-warning',
+                    text: message
+                })
+                warningEl.setAttr('role', 'alert')
+                return () => warningEl.remove()
+            }
+        }
     }
 
     private addStatusRow(
@@ -482,10 +520,38 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 },
                 {
                     name: 'Bearer token',
-                    desc: 'Required on every request except the public catalog. Keep it secret.',
+                    desc:
+                        "Required on every request except the public catalog. Stored in Obsidian's " +
+                        'secret storage on this device, not in the plugin data file. Pick or create the ' +
+                        'secret here; copy or regenerate it with the buttons.',
                     searchable: true,
                     render: (setting): void => {
                         this.renderBearerTokenControls(setting)
+                    }
+                },
+                this.missingSecretRow(
+                    'Bearer token missing',
+                    'bearerToken',
+                    'The bearer token secret is not set on this device (secret storage is per device), ' +
+                        'so the registry refuses authenticated requests. Use the picker above to give ' +
+                        'it the same value as on your other devices, or regenerate it.'
+                ),
+                {
+                    name: 'Remove plain-text copy now',
+                    desc:
+                        'Older versions kept the bearer token and API key in the plugin data file, which ' +
+                        'syncs with your vault. A copy stays there so your other synced devices move to ' +
+                        `secret storage on their own; it is deleted automatically ${LEGACY_SECRET_GRACE_DAYS} ` +
+                        'days after the first migration. Remove it now once all your devices run this version.',
+                    visible: (): boolean => hasLegacySecretCopies(this.plugin.settings),
+                    render: (setting): void => {
+                        setting.addButton((button) =>
+                            button.setButtonText('Remove').onClick(async () => {
+                                await this.plugin.removeLegacySecretCopies()
+                                new Notice('Plain-text secret copy removed from the plugin data')
+                                this.update()
+                            })
+                        )
                     }
                 },
                 {
@@ -519,20 +585,23 @@ export class ArdServerSettingTab extends PluginSettingTab {
 
     private renderBearerTokenControls(setting: Setting): void {
         setting
-            .addText((text) => {
-                text.inputEl.type = 'password'
-                text.setValue(this.plugin.settings.server.bearerToken)
-                text.setDisabled(true)
-                text.inputEl.addClass('ard-token-field')
-            })
+            .addComponent((el) =>
+                new SecretComponent(this.app, el)
+                    .setValue(this.plugin.settings.server.bearerTokenSecretName)
+                    .onChange(async (name) => {
+                        await this.plugin.selectSecret('bearerToken', name)
+                        this.update()
+                    })
+            )
             .addExtraButton((button) =>
                 button
                     .setIcon('copy')
                     .setTooltip('Copy token')
                     .onClick(() => {
-                        void navigator.clipboard
-                            .writeText(this.plugin.settings.server.bearerToken)
-                            .then(() => new Notice('Bearer token copied'))
+                        const token = this.currentBearerToken()
+                        if (token) {
+                            void this.copyToClipboard(token, 'Bearer token copied')
+                        }
                     })
             )
             .addExtraButton((button) =>
@@ -540,9 +609,7 @@ export class ArdServerSettingTab extends PluginSettingTab {
                     .setIcon('refresh-cw')
                     .setTooltip('Regenerate token (invalidates the old one)')
                     .onClick(async () => {
-                        await this.plugin.updateSettings((draft) => {
-                            draft.server.bearerToken = generateBearerToken()
-                        })
+                        await this.plugin.regenerateBearerToken()
                         this.update()
                     })
             )
@@ -925,22 +992,39 @@ export class ArdServerSettingTab extends PluginSettingTab {
                 },
                 {
                     name: 'API key',
-                    desc: 'Sent as a Bearer token. Stored in plugin data — treat it as a secret.',
+                    desc:
+                        "Sent as a Bearer token. Stored in Obsidian's secret storage on this device, " +
+                        'not in the plugin data file: pick or create the secret.',
                     visible: isHosted,
-                    // No password control type exists; render a masked input.
                     render: (setting): void => {
-                        setting.addText((text) => {
-                            text.inputEl.type = 'password'
-                            text.setPlaceholder('sk-…')
-                                .setValue(this.plugin.settings.searchBackend.apiKey ?? '')
-                                .onChange(async (value) => {
-                                    await this.plugin.updateSettings((draft) => {
-                                        draft.searchBackend.apiKey = value.trim() || undefined
+                        setting
+                            .addComponent((el) =>
+                                new SecretComponent(this.app, el)
+                                    .setValue(this.plugin.settings.searchBackend.apiKeySecretName)
+                                    .onChange(async (name) => {
+                                        await this.plugin.selectSecret('embeddingApiKey', name)
+                                        this.update()
                                     })
-                                })
-                        })
+                            )
+                            .addExtraButton((button) =>
+                                button
+                                    .setIcon('trash')
+                                    .setTooltip('Clear the API key')
+                                    .onClick(async () => {
+                                        await this.plugin.clearSecret('embeddingApiKey')
+                                        new Notice('API key cleared')
+                                        this.update()
+                                    })
+                            )
                     }
                 },
+                this.missingSecretRow(
+                    'API key missing',
+                    'embeddingApiKey',
+                    'The API key secret is not set on this device (secret storage is per device). ' +
+                        'Use the picker above to set it; search stays lexical until then.',
+                    isHosted
+                ),
                 {
                     name: 'Reindex',
                     desc: 'Rebuild the search index over the current catalog without rescanning folders.',

@@ -3,27 +3,29 @@ import { SearchBackendConfigSchema } from '../../types/plugin-settings.intf'
 import { resolveHostedEmbedderConfig } from './hosted-embedding'
 
 const cfg = (over: object = {}) => SearchBackendConfigSchema.parse({ kind: 'hosted-api', ...over })
+const noKey = (): string | undefined => undefined
 
 describe('resolveHostedEmbedderConfig', () => {
     it('maps openai to its base URL and default model', () => {
-        const r = resolveHostedEmbedderConfig(cfg({ apiProvider: 'openai', apiKey: 'sk-1' }))
+        const r = resolveHostedEmbedderConfig(cfg({ apiProvider: 'openai' }), () => 'sk-1')
         expect(r.url).toBe('https://api.openai.com/v1')
         expect(r.model).toBe('text-embedding-3-small')
-        expect(r.apiKey).toBe('sk-1')
+        expect(r.apiKey?.()).toBe('sk-1')
     })
 
     it('maps voyage and jina to their endpoints', () => {
-        expect(resolveHostedEmbedderConfig(cfg({ apiProvider: 'voyage' })).url).toBe(
+        expect(resolveHostedEmbedderConfig(cfg({ apiProvider: 'voyage' }), noKey).url).toBe(
             'https://api.voyageai.com/v1'
         )
-        expect(resolveHostedEmbedderConfig(cfg({ apiProvider: 'jina' })).url).toBe(
+        expect(resolveHostedEmbedderConfig(cfg({ apiProvider: 'jina' }), noKey).url).toBe(
             'https://api.jina.ai/v1'
         )
     })
 
     it('prefers an explicit model over the provider default', () => {
         const r = resolveHostedEmbedderConfig(
-            cfg({ apiProvider: 'openai', apiModel: 'text-embedding-3-large' })
+            cfg({ apiProvider: 'openai', apiModel: 'text-embedding-3-large' }),
+            noKey
         )
         expect(r.model).toBe('text-embedding-3-large')
     })
@@ -33,18 +35,19 @@ describe('resolveHostedEmbedderConfig', () => {
             cfg({
                 apiProvider: 'custom',
                 apiBaseUrl: 'https://gw.example/v1',
-                apiModel: 'embed-1',
-                apiKey: 'k'
-            })
+                apiModel: 'embed-1'
+            }),
+            () => 'k'
         )
         expect(r.url).toBe('https://gw.example/v1')
         expect(r.model).toBe('embed-1')
-        expect(r.apiKey).toBe('k')
+        expect(r.apiKey?.()).toBe('k')
     })
 
     it('defaults to openai when no provider is set', () => {
         const r = resolveHostedEmbedderConfig(
-            SearchBackendConfigSchema.parse({ kind: 'hosted-api' })
+            SearchBackendConfigSchema.parse({ kind: 'hosted-api' }),
+            noKey
         )
         expect(r.url).toBe('https://api.openai.com/v1')
     })
