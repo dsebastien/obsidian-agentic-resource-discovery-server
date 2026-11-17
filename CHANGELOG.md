@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.3.0...1.3.1) (2026-11-17)
+
+### Bug Fixes
+
+* **plugin:** give MCP clients that read only the text content the search results and the resources ([d558f3c](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/d558f3c020fd15dbb6862fcc20fcc1d8b4a89da0)), closes [#20](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/issues/20)
+
 ## [1.3.0](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/compare/1.2.3...1.3.0) (2026-10-03)
 
 ### Secrets are now kept in Obsidian's secret storage
@@ -163,6 +169,7 @@ still needs eyes-on verification in Obsidian (nothing in CI renders it).
 
 * **plugin:** guard against the registry resurrecting after unload ([ccfa366](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/ccfa366ffb5adf8d194b371ab1ac3f0d79bd3769))
 * **plugin:** skip embedder for empty catalog in SemanticSearchBackend ([3a472e4](https://github.com/dsebastien/obsidian-agentic-resource-discovery-server/commit/3a472e4fbdc3472fbfab8ad55ec7851e15935db5))
+
 
 
 

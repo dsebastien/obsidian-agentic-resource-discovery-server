@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.3.1 (2026-11-17)
+
+### Bug Fixes
+
+- **plugin:** give MCP clients that read only the text content the search results and the resources
+
 ## 1.3.0 (2026-10-03)
 
 ### Secrets are now kept in Obsidian's secret storage
