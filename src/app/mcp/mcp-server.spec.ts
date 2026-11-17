@@ -57,6 +57,7 @@ interface RpcResponse {
         serverInfo: { name: string }
         capabilities: { tools?: unknown }
         tools: Array<{ name: string }>
+        content: Array<{ type: string; text: string }>
         structuredContent: {
             results: Array<{ identifier: string }>
             entry: { displayName: string }
@@ -116,6 +117,34 @@ describe('handleMcpMessage', () => {
         )
         expect(res.result.structuredContent.entry.displayName).toBe('Git Commit Helper')
         expect(res.result.structuredContent.body).toContain('# Git Commit')
+    })
+
+    // Clients that read only `content` (no `structuredContent` support) must get
+    // the search results too, not only a count.
+    it('returns the search results as JSON in the text content too', async () => {
+        const res = await rpc(call(30, 'search', { query: 'commit' }))
+        expect(res.result.content).toHaveLength(1)
+        expect(res.result.content[0]!.type).toBe('text')
+        expect(JSON.parse(res.result.content[0]!.text)).toEqual(res.result.structuredContent)
+        expect(res.result.content[0]!.text).toContain('urn:air:obsidian:skills:git-commit')
+    })
+
+    it('returns the entry and its body as JSON in the text content too', async () => {
+        const res = await rpc(
+            call(31, 'get_resource', {
+                identifier: 'urn:air:obsidian:skills:git-commit',
+                include_body: true
+            })
+        )
+        const text = res.result.content[0]!.text
+        expect(res.result.content).toHaveLength(1)
+        expect(JSON.parse(text)).toEqual(res.result.structuredContent)
+        expect(text).toContain('# Git Commit')
+    })
+
+    it('keeps the execute text content as the returned value', async () => {
+        const res = await rpc(call(32, 'execute', { code: 'return { n: 1 }' }))
+        expect(JSON.parse(res.result.content[0]!.text)).toEqual({ n: 1 })
     })
 
     it('runs the execute tool (Code Mode) against the catalog', async () => {

@@ -156,6 +156,8 @@ Point an MCP client at `http://127.0.0.1:27182/mcp` with header `Authorization: 
 - **`get_resource`** — fetch one entry by URN, optionally with its body (the `SKILL.md` of a skill, the definition file of a subagent). The body is resolved by URN, never from the entry's URL. **`get_skill`** is kept as an alias.
 - **`execute`** — Code Mode: write JavaScript that calls a pre-injected `registry` API (`registry.search(query, { limit, filter })`, `registry.get(id)`, `registry.listAll(filter)`) and return a result. Runs in a sandbox with no network/filesystem access, a time limit, and a memory cap — so an agent can filter and aggregate across the whole catalog in one call. `registry.search` ranks identically to `POST /search`, so the answer doesn't depend on which door the agent walks through.
 
+`search` and `get_resource` return their data as `structuredContent` and as the same JSON in the text block of `content`, so a client that passes only `content` to the model also gets it. A client reads one of the two fields, so the data reaches the model once.
+
 ## Commands
 
 | Command                                          | Description                                                                   |

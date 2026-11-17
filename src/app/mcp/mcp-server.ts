@@ -197,7 +197,10 @@ async function toolSearch(args: Record<string, unknown>, deps: McpDeps): Promise
         description: h.entry.description,
         score: h.score
     }))
-    return toolResult(`Found ${results.length} result(s).`, { results })
+    // Clients that hand only `content` to the model (no `structuredContent`
+    // support) must still get the results, so the text block carries them as
+    // compact JSON, as the MCP spec asks of a tool with structured content.
+    return toolResult(JSON.stringify({ results }), { results })
 }
 
 async function toolGetResource(args: Record<string, unknown>, deps: McpDeps): Promise<unknown> {
@@ -215,7 +218,11 @@ async function toolGetResource(args: Record<string, unknown>, deps: McpDeps): Pr
             body = new TextDecoder().decode(served.body)
         }
     }
-    return toolResult(entry.displayName, { entry, body })
+    // Same rule as search: the text block is the JSON of the structured content,
+    // so a client that hands only `content` to the model can load a resource.
+    // A client reads one of the two fields, so the body reaches the model once.
+    const structured = { entry, body }
+    return toolResult(JSON.stringify(structured), structured)
 }
 
 async function toolExecute(args: Record<string, unknown>, deps: McpDeps): Promise<unknown> {
